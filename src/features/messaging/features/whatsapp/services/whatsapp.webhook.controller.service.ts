@@ -104,11 +104,12 @@ export class WhatsappService {
   /**
    * Procesa los mensajes entrantes de WhatsApp
    */
-  async processIncomingWebhook(body: Record<string, unknown>): Promise<void> {
+  async processIncomingWebhook(body: unknown): Promise<void> {
     this.logger.log('Procesando webhook');
     try {
-      if (!('object' in body && 'entry' in body)) {
-        throw new Error('Formato de payload no válido');
+      if (!this.isWebhookPayload(body)) {
+        this.logger.warn('Webhook recibido con payload vacío o no válido');
+        return;
       }
       const webhookData: WhatsAppWebhook = body as unknown as WhatsAppWebhook;
       this.logger.debug('Webhook data:', JSON.stringify(webhookData, null, 2));
@@ -135,6 +136,15 @@ export class WhatsappService {
     } catch (error) {
       this.logger.error('Error procesando webhook:', error);
     }
+  }
+
+  private isWebhookPayload(body: unknown): body is Record<string, unknown> {
+    return (
+      typeof body === 'object' &&
+      body !== null &&
+      'object' in body &&
+      'entry' in body
+    );
   }
 
   async processIncomingMessage(
