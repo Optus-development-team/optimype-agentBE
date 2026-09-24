@@ -14,10 +14,10 @@ export class CalendarService {
   async checkAvailability(
     companyId: string,
     date: string,
-    phoneNumber?: string,
+    timezone?: string,
     calendarId = 'primary',
   ): Promise<calendar_v3.Schema$Event[]> {
-    const bounds = this.timeService.resolveDateBounds(date, phoneNumber);
+    const bounds = this.timeService.resolveDateBounds(date, timezone);
     const response = await this.client(companyId).then((calendar) =>
       calendar.events.list({
         calendarId,
@@ -67,10 +67,10 @@ export class CalendarService {
       calendarId?: string;
       appointmentId?: string;
     },
-    phoneNumber?: string,
+    timezoneName?: string,
   ): Promise<calendar_v3.Schema$Event & { calendarAppLink?: string }> {
     const calendar = await this.client(companyId);
-    const timezone = this.timeService.getTimezone(phoneNumber);
+    const timezone = this.timeService.getTimezone(timezoneName);
     const startDate = dayjs(details.start);
     const endDate = details.end
       ? dayjs(details.end)

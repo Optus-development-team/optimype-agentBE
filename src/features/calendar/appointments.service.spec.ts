@@ -41,6 +41,8 @@ describe('AppointmentsService', () => {
     updateSchedule: jest.fn(),
     updateStatus: jest.fn(),
     listForCustomer: jest.fn(),
+    listBookableServices: jest.fn(),
+    listActiveStaff: jest.fn(),
   };
   const sync = { syncAppointmentToGoogle: jest.fn() };
   const availability = { selectStaffForRange: jest.fn() };
@@ -200,5 +202,52 @@ describe('AppointmentsService', () => {
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(repository.updateStatus).not.toHaveBeenCalled();
+  });
+
+  it('resuelve un servicio por nombre ignorando mayúsculas y acentos', async () => {
+    repository.listBookableServices.mockResolvedValue([
+      { id: 'service-1', name: 'Corte clásico', duration_minutes: 30 },
+    ]);
+
+    await expect(
+      service.resolveBookableService('c1', 'CORTE CLASICO'),
+    ).resolves.toEqual({
+      id: 'service-1',
+      name: 'Corte clásico',
+      durationMinutes: 30,
+    });
+  });
+
+  it('no elige al azar cuando el servicio es ambiguo', async () => {
+    repository.listBookableServices.mockResolvedValue([
+      { id: 'service-1', name: 'Corte clásico', duration_minutes: 30 },
+      { id: 'service-2', name: 'Corte infantil', duration_minutes: 30 },
+    ]);
+
+    await expect(
+      service.resolveBookableService('c1', 'corte'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('resuelve un profesional por nombre parcial sin confundir empresas', async () => {
+    repository.listActiveStaff.mockResolvedValue([
+      { id: 'staff-1', name: 'Fernando Silva', specialty: 'Barbería' },
+    ]);
+
+    await expect(service.resolveActiveStaff('c1', 'Fernando')).resolves.toEqual(
+      { id: 'staff-1', name: 'Fernando Silva', specialty: 'Barbería' },
+    );
+    expect(repository.listActiveStaff).toHaveBeenCalledWith('c1', undefined);
+  });
+
+  it('pide aclaración cuando el nombre del profesional es ambiguo', async () => {
+    repository.listActiveStaff.mockResolvedValue([
+      { id: 'staff-1', name: 'Fernando Silva', specialty: null },
+      { id: 'staff-2', name: 'Fernando Pérez', specialty: null },
+    ]);
+
+    await expect(
+      service.resolveActiveStaff('c1', 'Fernando'),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });

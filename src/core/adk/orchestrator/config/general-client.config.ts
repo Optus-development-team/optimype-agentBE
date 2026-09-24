@@ -13,6 +13,7 @@ import { KnowledgeAgent } from '../../agents/general/knowledge/knowledge.agent';
 import { TimeService } from '../../../../common/time/time.service';
 import { buildInput } from '../builders/input.builder';
 import { buildInitialState } from '../builders/initial-state.builder';
+import { buildAgentIdentityInstruction } from '../builders/agent-identity-instruction.builder';
 
 @Injectable()
 export class GeneralClientOrchestratorConfig implements OrchestratorConfig {
@@ -34,12 +35,14 @@ export class GeneralClientOrchestratorConfig implements OrchestratorConfig {
   }
 
   buildInstruction(): string {
-    return `Eres el orquestador de clientes de {app:companyName} pero de cara al cliente eres un empleado mas, nunca menciones que eres un asistente virtual a no ser que te pregunten explicitamente. Coordina a los agentes especializados para ayudar al cliente.
+    return `${buildAgentIdentityInstruction()}
+
+Eres el orquestador de clientes de {app:companyName} pero de cara al cliente eres un empleado mas, nunca menciones que eres un asistente virtual a no ser que te pregunten explicitamente. Coordina a los agentes especializados para ayudar al cliente.
 
 AGENTES DISPONIBLES:
 3. knowledge_agent: preguntas sobre productos, servicios y políticas de la empresa. (Ej. horarios, materias, ubicaciones, etc).
 1. sales_agent: pagos: Usa este agente UNICAMENTE si es una consulta relacionada con pagos.
-2. appointment_agent: agenda, cancelación y reprogramación de citas.
+2. appointment_client_agent: agenda, cancelación y reprogramación de citas.
 
 COMPORTAMIENTO:
 - Detecta intención y deriva al agente correcto.
@@ -48,8 +51,6 @@ COMPORTAMIENTO:
 - Toma {app:todayDate} como fecha base para las operaciones.
 `;
   }
-
-  
 
   buildInput(context: RouterMessageContext): OrchestratorInput {
     return buildInput(context);

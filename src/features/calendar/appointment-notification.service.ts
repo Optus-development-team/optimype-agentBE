@@ -150,6 +150,10 @@ export class AppointmentNotificationService {
       attempts: number;
       max_attempts: number;
       title: string | null;
+      service_name: string | null;
+      staff_name: string | null;
+      company_name: string;
+      company_address: string | null;
       scheduled_start: Date | string;
       timezone: string | null;
       whatsapp_phone_id: string | null;
@@ -157,11 +161,16 @@ export class AppointmentNotificationService {
     }>(
       `SELECT n.id, n.company_id, n.appointment_id, n.notification_type,
               n.recipient, n.attempts, n.max_attempts, a.title,
+              ci.name AS service_name,
+              NULLIF(TRIM(cs.first_name || ' ' || COALESCE(cs.last_name, '')), '') AS staff_name,
+              c.name AS company_name, c.address AS company_address,
               a.scheduled_start, a.status::text AS appointment_status,
               c.timezone, c.whatsapp_phone_id
          FROM appointment_notifications n
          JOIN appointments a ON a.id = n.appointment_id
          JOIN companies c ON c.id = n.company_id
+         LEFT JOIN catalog_items ci ON ci.id = a.catalog_item_id
+         LEFT JOIN company_staff cs ON cs.id = a.staff_id
         WHERE n.id = $1 LIMIT 1`,
       [notificationId],
     );
@@ -212,24 +221,30 @@ export class AppointmentNotificationService {
   private message(item: {
     notification_type: string;
     title: string | null;
+    service_name: string | null;
+    staff_name: string | null;
+    company_name: string;
+    company_address: string | null;
     scheduled_start: Date | string;
     timezone: string | null;
   }): string {
     const when = dayjs(item.scheduled_start)
       .tz(item.timezone || 'America/La_Paz')
       .format('DD/MM/YYYY HH:mm');
-    const title = item.title || 'tu cita';
+    const service = item.service_name || item.title || 'tu cita';
+    const staff = item.staff_name ? ` con ${item.staff_name}` : '';
+    const address = item.company_address ? `\n📍 ${item.company_address}` : '';
     const messages: Record<string, string> = {
-      confirmation: `✅ Confirmamos ${title} para el ${when}.`,
-      reminder_24h: `🔔 Recordatorio: ${title} es el ${when}.`,
-      reminder_2h: `⏰ Tu cita ${title} comienza el ${when}.`,
-      rescheduled: `📅 Tu cita ${title} fue reprogramada para el ${when}.`,
-      cancelled: `❌ La cita ${title} del ${when} fue cancelada.`,
-      staff_assigned: `📌 Se te asignó ${title} para el ${when}.`,
+      confirmation: `✅ Tu ${service}${staff} quedó confirmada para el ${when}.${address}`,
+      reminder_24h: `🔔 Te recordamos que tienes ${service}${staff} el ${when}.${address}`,
+      reminder_2h: `⏰ Tu ${service}${staff} comienza el ${when}.${address}\nSi necesitas cambiarla, responde a este mensaje.`,
+      rescheduled: `📅 Tu ${service}${staff} fue reprogramada para el ${when}.${address}`,
+      cancelled: `❌ Tu ${service} del ${when} fue cancelada. Si quieres, puedo ayudarte a reservar otro horario.`,
+      staff_assigned: `📌 Se te asignó ${service} para el ${when}.`,
     };
     return (
       messages[item.notification_type] ||
-      `Actualización de cita: ${title}, ${when}.`
+      `Actualización de cita: ${service}, ${when}.`
     );
   }
 

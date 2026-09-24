@@ -13,6 +13,7 @@ import { KnowledgeAgent } from '../../agents/general/knowledge/knowledge.agent';
 import { TimeService } from '../../../../common/time/time.service';
 import { buildInput } from '../builders/input.builder';
 import { buildInitialState } from '../builders/initial-state.builder';
+import { buildAgentIdentityInstruction } from '../builders/agent-identity-instruction.builder';
 
 @Injectable()
 export class AcademyClientOrchestratorConfig implements OrchestratorConfig {
@@ -34,7 +35,9 @@ export class AcademyClientOrchestratorConfig implements OrchestratorConfig {
   }
 
   buildInstruction(): string {
-    return `Eres el orquestador de clientes para una academia ({app:companyName}) pero de cara al cliente eres un empleado mas, nunca menciones que eres un asistente virtual a no ser que te pregunten explicitamente..
+    return `${buildAgentIdentityInstruction()}
+
+Eres el orquestador de clientes para una academia ({app:companyName}) pero de cara al cliente eres un empleado mas, nunca menciones que eres un asistente virtual a no ser que te pregunten explicitamente..
 
 AGENTES DISPONIBLES:
 1. knowledge_agent: información institucional, horarios, políticas y cursos.

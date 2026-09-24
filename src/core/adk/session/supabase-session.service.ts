@@ -240,6 +240,52 @@ export class SupabaseSessionService extends BaseSessionService {
     return event;
   }
 
+  /**
+   * Renueva los datos variables del contexto sin borrar el historial.
+   * Evita que fechas como "hoy" y "mañana" usen el día de creación de la sesión.
+   */
+  async refreshSessionState(
+    session: Session,
+    freshState: Record<string, unknown>,
+  ): Promise<Session> {
+    session.state = this.stripTempState({
+      ...session.state,
+      ...freshState,
+    });
+    session.lastUpdateTime = Date.now();
+
+    const companyId = this.resolveCompanyId(session.state);
+    if (this.supabase.isEnabled() && companyId) {
+      try {
+        await this.supabase.query(
+          `INSERT INTO adk_sessions (session_id, company_id, context_data, updated_at)
+           VALUES ($1, $2, $3::jsonb, NOW())
+           ON CONFLICT (session_id)
+           DO UPDATE SET company_id = EXCLUDED.company_id,
+                         context_data = EXCLUDED.context_data,
+                         updated_at = NOW()`,
+          [
+            session.id,
+            companyId,
+            JSON.stringify({
+              appName: session.appName,
+              userId: session.userId,
+              state: session.state,
+              events: session.events,
+            }),
+          ],
+        );
+      } catch (error) {
+        this.logger.error(
+          `Error renovando sesión en Supabase: ${(error as Error).message}`,
+        );
+      }
+    }
+
+    this.fallbackSessions.set(session.id, session);
+    return session;
+  }
+
   private applyGetConfig(
     session: Session,
     config?: GetSessionRequest['config'],

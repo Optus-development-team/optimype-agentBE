@@ -7,11 +7,9 @@ async function bootstrap() {
   // the snapshot value is true in development and false in production/test
   const snapshot = process.env.NODE_ENV === 'development';
   Logger.log('NODE_ENV value: ', process.env.NODE_ENV || 'development');
-  const app = await NestFactory.create(AppModule,
-    {
-      snapshot,
-    }
-  );
+  const app = await NestFactory.create(AppModule, {
+    snapshot,
+  });
   app.setGlobalPrefix('v1', {
     exclude: ['docs', 'docs-json', 'docs/*path'],
   });
@@ -42,6 +40,7 @@ async function bootstrap() {
       'API para autenticación, pagos y webhooks. Usa Bearer token para rutas protegidas.',
     )
     .setVersion('1.0')
+    .addServer('/', 'Servidor actual')
     .addServer('http://localhost:3001', 'local')
     .addServer('http://localhost:3000', 'Local')
     .addServer('https://api.rnd.honeyguide.optus.lat', 'Development')

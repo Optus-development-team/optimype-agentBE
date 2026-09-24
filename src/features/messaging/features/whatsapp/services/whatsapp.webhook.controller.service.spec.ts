@@ -1,11 +1,18 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+
+jest.mock(
+  '../../../../../core/adk/orchestrator/adk-orchestrator.service',
+  () => ({ AdkOrchestratorService: class {} }),
+);
+
 import { WhatsappService } from './whatsapp.webhook.controller.service';
 import { AdkOrchestratorService } from '../../../../../core/adk/orchestrator/adk-orchestrator.service';
 import { WhatsAppMessagingService } from './whatsapp.messaging.service';
 import { VerificationService } from '../../../../login/verification.service';
 import { IdentityService } from '../../../../auth/identity.service';
+import { SupabaseService } from '../../../../../common/intraestructure/supabase/supabase.service';
 import type { IncomingWhatsAppWebhookContext } from '../mappers/whatsapp-webhook.mapper';
 
 describe('WhatsappService - Dev Tenant Phone Filter', () => {
@@ -15,6 +22,7 @@ describe('WhatsappService - Dev Tenant Phone Filter', () => {
     resolveTenantByPhoneId: jest.Mock;
     resolveRole: jest.Mock;
   };
+  let dbMock: { isEnabled: jest.Mock; query: jest.Mock };
 
   beforeEach(async () => {
     configMap = {
@@ -26,6 +34,10 @@ describe('WhatsappService - Dev Tenant Phone Filter', () => {
     identityServiceMock = {
       resolveTenantByPhoneId: jest.fn(),
       resolveRole: jest.fn(),
+    };
+    dbMock = {
+      isEnabled: jest.fn(() => false),
+      query: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -72,10 +84,33 @@ describe('WhatsappService - Dev Tenant Phone Filter', () => {
             emit: jest.fn(),
           },
         },
+        {
+          provide: SupabaseService,
+          useValue: dbMock,
+        },
       ],
     }).compile();
 
     service = module.get<WhatsappService>(WhatsappService);
+  });
+
+  describe('idempotencia de mensajes', () => {
+    it('solo reclama una vez el mismo wamid dentro de la instancia', async () => {
+      const inbound = {
+        id: 'wamid.duplicado',
+        tenant: { companyId: 'company-1' },
+        recipientId: 'phone-id',
+        senderId: '59170000000',
+      };
+      const claim = (
+        service as unknown as {
+          claimInboundMessage: (message: unknown) => Promise<boolean>;
+        }
+      ).claimInboundMessage.bind(service);
+
+      await expect(claim(inbound)).resolves.toBe(true);
+      await expect(claim(inbound)).resolves.toBe(false);
+    });
   });
 
   describe('isPhoneNumberAllowed', () => {
@@ -98,7 +133,9 @@ describe('WhatsappService - Dev Tenant Phone Filter', () => {
       configMap['NODE_ENV'] = 'development';
       configMap['DEV_TENANT_PHONE_NUMBER_ID'] = 'allowed-tenant-phone-id';
 
-      expect(service.isPhoneNumberAllowed('allowed-tenant-phone-id')).toBe(true);
+      expect(service.isPhoneNumberAllowed('allowed-tenant-phone-id')).toBe(
+        true,
+      );
       expect(service.isPhoneNumberAllowed('other-tenant-phone-id')).toBe(false);
     });
 
@@ -106,7 +143,9 @@ describe('WhatsappService - Dev Tenant Phone Filter', () => {
       configMap['NODE_ENV'] = 'production';
       configMap['DEV_TENANT_PHONE_NUMBER_ID'] = 'allowed-tenant-phone-id';
 
-      expect(service.isPhoneNumberAllowed('allowed-tenant-phone-id')).toBe(true);
+      expect(service.isPhoneNumberAllowed('allowed-tenant-phone-id')).toBe(
+        true,
+      );
       expect(service.isPhoneNumberAllowed('other-tenant-phone-id')).toBe(true);
     });
 
@@ -114,7 +153,9 @@ describe('WhatsappService - Dev Tenant Phone Filter', () => {
       configMap['NODE_ENV'] = 'test';
       configMap['DEV_TENANT_PHONE_NUMBER_ID'] = 'allowed-tenant-phone-id';
 
-      expect(service.isPhoneNumberAllowed('allowed-tenant-phone-id')).toBe(true);
+      expect(service.isPhoneNumberAllowed('allowed-tenant-phone-id')).toBe(
+        true,
+      );
       expect(service.isPhoneNumberAllowed('other-tenant-phone-id')).toBe(true);
     });
   });

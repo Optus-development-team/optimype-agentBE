@@ -37,6 +37,7 @@ export type DbCompanyTenantRow = Pick<
   | 'id'
   | 'name'
   | 'vertical'
+  | 'timezone'
   | 'config'
   | 'whatsapp_admin_phone_ids'
   | 'whatsapp_display_phone_number'

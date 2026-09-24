@@ -41,10 +41,12 @@ export class LlmResponseFormatterService {
     this.agent = new LlmAgent({
       name: 'llm_response_formatter',
       model,
-      description: 'Formatea la respuesta final del agente a JSON estructurado.',
+      description:
+        'Formatea la respuesta final del agente a JSON estructurado.',
       instruction:
         'Convierte la respuesta a un JSON valido siguiendo el esquema. ' +
-        'Selecciona el tipo correcto y completa los campos requeridos.',
+        'Selecciona el tipo correcto y completa los campos requeridos. ' +
+        'Si usas una lista de WhatsApp, genera como maximo 10 items en total entre todas sus secciones.',
       inputSchema: LLM_RESPONSE_FORMAT_INPUT_SCHEMA,
       outputSchema: LLM_FORMATTED_RESPONSE_SCHEMA,
       outputKey: LLM_FORMATTER_OUTPUT_KEY,
@@ -54,7 +56,6 @@ export class LlmResponseFormatterService {
   async formatResponse(
     input: LlmResponseFormatInput,
   ): Promise<FormattedResponse> {
-    
     // 1. Crear un servicio de sesión y un runner efímeros para ESTA solicitud.
     // Esto asegura que el formateador no acumule historial de otros mensajes de Optus
     // y el recolector de basura (Garbage Collector) limpiará la memoria al terminar.
@@ -99,14 +100,19 @@ export class LlmResponseFormatterService {
         }
       }
     } catch (error) {
-      this.logger.error(`Error en la ejecución del formateador ADK: ${error.message}`, error.stack);
+      this.logger.error(
+        `Error en la ejecución del formateador ADK: ${error.message}`,
+        error.stack,
+      );
     }
 
     if (formatted) {
       return formatted;
     }
 
-    this.logger.warn('No se pudo formatear la respuesta, usando fallback estructurado');
+    this.logger.warn(
+      'No se pudo formatear la respuesta, usando fallback estructurado',
+    );
     return {
       type: 'buttons',
       body:
@@ -122,7 +128,8 @@ export class LlmResponseFormatterService {
   }
 
   private extractFormattedResponse(event: unknown): FormattedResponse | null {
-    const output = (event as { output?: Record<string, unknown> | null }).output;
+    const output = (event as { output?: Record<string, unknown> | null })
+      .output;
 
     if (output && LLM_FORMATTER_OUTPUT_KEY in output) {
       return output[LLM_FORMATTER_OUTPUT_KEY] as FormattedResponse;
