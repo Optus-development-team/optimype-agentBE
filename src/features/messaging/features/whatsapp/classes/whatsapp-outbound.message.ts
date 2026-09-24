@@ -130,6 +130,13 @@ export class WhatsAppOutboundMessage implements IMessage<any> {
 
     switch (output.type) {
       case 'binary_question':
+        if (!output.options?.length) {
+          return this.messagingService.sendText(
+            this.recipientId,
+            output.question,
+            { phoneNumberId: options.phoneNumberId, companyId: options.companyId },
+          );
+        }
         return this.messagingService.sendInteractiveButtons(
           this.recipientId,
           output.question,
@@ -137,6 +144,13 @@ export class WhatsAppOutboundMessage implements IMessage<any> {
           { phoneNumberId: options.phoneNumberId, companyId: options.companyId },
         );
       case 'buttons':
+        if (!output.options?.length) {
+          return this.messagingService.sendText(
+            this.recipientId,
+            output.body,
+            { phoneNumberId: options.phoneNumberId, companyId: options.companyId },
+          );
+        }
         return this.messagingService.sendInteractiveButtons(
           this.recipientId,
           output.body,
