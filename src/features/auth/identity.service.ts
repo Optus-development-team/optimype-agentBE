@@ -15,20 +15,22 @@ type NullableString = string | null | undefined;
 export class IdentityService {
   private readonly logger = new Logger(IdentityService.name);
 
-  constructor(
-    private readonly supabaseService: SupabaseService,
-  ) {}
+  constructor(private readonly supabaseService: SupabaseService) {}
 
   async resolveTenantByPhoneId(
     phoneNumberId?: string,
   ): Promise<TenantContext | null> {
     if (!phoneNumberId) {
-      this.logger.error('phone_number_id no presente en la solicitud. Desechando petición.');
+      this.logger.error(
+        'phone_number_id no presente en la solicitud. Desechando petición.',
+      );
       return null;
     }
 
     if (!this.supabaseService.isEnabled()) {
-      this.logger.error('Conexión a Supabase no disponible para resolver tenant por phone_number_id. Desechando petición.');
+      this.logger.error(
+        'Conexión a Supabase no disponible para resolver tenant por phone_number_id. Desechando petición.',
+      );
       return null;
     }
 
@@ -60,7 +62,9 @@ export class IdentityService {
     companyId: string,
   ): Promise<TenantContext | null> {
     if (!companyId) {
-      this.logger.error('companyId no especificado para resolver tenant. Desechando petición.');
+      this.logger.error(
+        'companyId no especificado para resolver tenant. Desechando petición.',
+      );
       return null;
     }
 
@@ -80,7 +84,9 @@ export class IdentityService {
     );
 
     if (!rows.length) {
-      this.logger.error(`No se encontró compañía registrada para id=${companyId}. Desechando petición.`);
+      this.logger.error(
+        `No se encontró compañía registrada para id=${companyId}. Desechando petición.`,
+      );
       return null;
     }
 
@@ -154,7 +160,9 @@ export class IdentityService {
     role: UserRole,
   ): Promise<string | null> {
     if (!this.supabaseService.isEnabled()) {
-      this.logger.error('Supabase no habilitado, no se puede registrar usuario en base de datos');
+      this.logger.error(
+        'Supabase no habilitado, no se puede registrar usuario en base de datos',
+      );
       return null;
     }
 
@@ -230,9 +238,7 @@ export class IdentityService {
       row.whatsapp_admin_phone_ids,
     );
 
-    const phoneNumberId =
-      explicitPhoneNumberId ??
-      row.whatsapp_phone_id;
+    const phoneNumberId = explicitPhoneNumberId ?? row.whatsapp_phone_id;
 
     if (!phoneNumberId) {
       this.logger.error(
