@@ -19,7 +19,8 @@ describe('handleGoogleAccountConnectionRequirement', () => {
         senderId: '59160000000',
         originalText: 'agenda',
         phoneNumberId: 'phone-1',
-        message: {},
+        whatsappMessageId: 'wamid-1',
+        message: {} as never,
         tenant: {
           companyId: 'company-1',
           companyName: 'Test Company',

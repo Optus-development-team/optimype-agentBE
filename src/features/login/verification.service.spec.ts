@@ -3,7 +3,7 @@ import { VerificationService } from './verification.service';
 describe('VerificationService', () => {
   const db = {
     isEnabled: jest.fn(),
-    query: jest.fn(),
+    query: jest.fn<Promise<unknown[]>, [string, unknown[]]>(),
   };
 
   let service: VerificationService;

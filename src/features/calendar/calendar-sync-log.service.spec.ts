@@ -2,7 +2,7 @@ import { CalendarSyncLogService } from './calendar-sync-log.service';
 
 describe('CalendarSyncLogService', () => {
   const db = {
-    query: jest.fn(),
+    query: jest.fn<Promise<unknown[]>, [string, unknown[]]>(),
   };
   let service: CalendarSyncLogService;
 
