@@ -40,10 +40,7 @@ export class WhatsappService {
   // Cache in-memory para evitar reprocesar mensajes cuando Meta reintenta el webhook.
   private readonly processedMessageCache = new Map<string, number>();
   private readonly processedMessageTtlMs = 10 * 60 * 1000; // 10 minutos
-  private readonly pendingBursts = new Map<
-    string,
-    PendingBurst
-  >();
+  private readonly pendingBursts = new Map<string, PendingBurst>();
 
   constructor(
     private readonly configService: ConfigService,
@@ -162,7 +159,9 @@ export class WhatsappService {
       // Resolver Tenant
       const tenant: TenantContext | null =
         (await this.identity.resolveTenantByPhoneId(phoneNumberId)) ?? null;
-      this.logger.debug(`Tenant resuelto: ${tenant ? tenant.companyName : 'No resuelto'} para phone_number_id=${phoneNumberId}`);
+      this.logger.debug(
+        `Tenant resuelto: ${tenant ? tenant.companyName : 'No resuelto'} para phone_number_id=${phoneNumberId}`,
+      );
 
       if (!tenant) {
         this.logger.warn(
@@ -176,7 +175,9 @@ export class WhatsappService {
         message.from,
         contactWaId,
       );
-      this.logger.debug(`Rol resuelto: ${role} para phone_number_id=${phoneNumberId}`);
+      this.logger.debug(
+        `Rol resuelto: ${role} para phone_number_id=${phoneNumberId}`,
+      );
 
       const inboundMsg = createWhatsAppInboundMessage(
         incomingContext,
@@ -186,7 +187,7 @@ export class WhatsappService {
       );
 
       // EVENT Mensaje recibido
-            
+
       await this.handleMessage(inboundMsg);
       //this.handleMessageStatus(status);
     } catch (error) {
@@ -194,7 +195,10 @@ export class WhatsappService {
       const details = safeError.response?.data ?? safeError.message;
       this.logger.error('Error procesando mensaje entrante:', details);
       this.logger.error('Stack trace:', safeError.stack);
-      this.logger.error('Payload completo:', JSON.stringify(incomingContext.message, null, 2));
+      this.logger.error(
+        'Payload completo:',
+        JSON.stringify(incomingContext.message, null, 2),
+      );
       throw safeError;
     }
   }
@@ -205,17 +209,17 @@ export class WhatsappService {
   private async handleMessage(
     inboundMsg: WhatsAppInboundMessage,
   ): Promise<void> {
-    /*     if (this.isDuplicateMessage(inboundMsg.id)) {
+    if (this.isDuplicateMessage(inboundMsg.id)) {
       this.logger.warn(
         `Mensaje duplicado detectado (id=${inboundMsg.id}). Se omite para evitar reprocesamiento.`,
       );
       return;
-    } */
+    }
 
     this.logger.log(`Mensaje recibido de: ${inboundMsg.senderId}`);
     this.logger.log(`Tipo de mensaje: ${inboundMsg.type}`);
 
-/*     const message = inboundMsg.rawPayload;
+    /*     const message = inboundMsg.rawPayload;
     // Log de información adicional si está disponible
     if (message.context) {
       this.logger.log(
@@ -276,7 +280,10 @@ export class WhatsappService {
 
       case MessageType.LOCATION:
         this.logger.log('Ubicación recibida');
-        await this.handleLocationMessage(inboundMsg.rawPayload, inboundMsg.recipientId);
+        await this.handleLocationMessage(
+          inboundMsg.rawPayload,
+          inboundMsg.recipientId,
+        );
         break;
 
       case MessageType.REACTION:
@@ -297,7 +304,10 @@ export class WhatsappService {
 
       case MessageType.UNSUPPORTED:
         this.logger.warn('Tipo de mensaje no soportado');
-        if (inboundMsg.rawPayload.errors && inboundMsg.rawPayload.errors.length > 0) {
+        if (
+          inboundMsg.rawPayload.errors &&
+          inboundMsg.rawPayload.errors.length > 0
+        ) {
           inboundMsg.rawPayload.errors.forEach((error) => {
             this.logger.error(
               `Error ${error.code}: ${error.title} - ${error.message || 'Sin detalles'}`,
@@ -314,9 +324,7 @@ export class WhatsappService {
   /**
    * Maneja mensajes de texto con lógica de respuesta automática
    */
-  private async handleTextMessage(
-    burst: WhatsAppMessageBurst,
-  ): Promise<void> {
+  private async handleTextMessage(burst: WhatsAppMessageBurst): Promise<void> {
     //const inboundMsg = burst.baseMessage;
     //const finalContent = burst.aggregatedText || inboundMsg.text;
     if (!burst.aggregatedText) return;
@@ -406,7 +414,7 @@ export class WhatsappService {
           status: safeError.response.status,
           data: safeError.response.data,
         }
-      : safeError.message ?? error;
+      : (safeError.message ?? error);
 
     this.logger.error(
       `❌ Error en ADK orchestrator: ${JSON.stringify(details)}`,
@@ -420,7 +428,7 @@ export class WhatsappService {
   /**
    * Maneja mensajes con medios (imagen, video, audio, documento)
    */
-/*   private async handleMediaMessage(
+  /*   private async handleMediaMessage(
     message: WhatsAppIncomingMessage,
     mediaType: 'image' | 'video' | 'audio' | 'document',
     phoneNumberId: string,
@@ -466,7 +474,9 @@ export class WhatsappService {
     );
   }
 
-  private async bufferConversationMessage(inboundMsg: WhatsAppInboundMessage): Promise<void> {
+  private async bufferConversationMessage(
+    inboundMsg: WhatsAppInboundMessage,
+  ): Promise<void> {
     // Id de la conversación (combinación de phoneNumberId y senderId) para agrupar mensajes en un burst (conjunto de mensajes)
     const key = this.getConversationKey(
       inboundMsg.recipientId,
@@ -480,7 +490,7 @@ export class WhatsappService {
     if (pending) {
       clearTimeout(pending.timeout);
       pending.burst.addMessage(inboundMsg);
-    // Si no hay un burst pendiente, creamos uno nuevo
+      // Si no hay un burst pendiente, creamos uno nuevo
     } else {
       pending = {
         burst: new WhatsAppMessageBurst(inboundMsg),
@@ -495,7 +505,7 @@ export class WhatsappService {
           `Error procesando buffer de conversación ${key}: ${(error as Error).message}`,
         );
       });
-    // el tiempo de espera se puede configurar en la variable de entorno WAIT_UNTIL_MESSAGE, por defecto 3000ms
+      // el tiempo de espera se puede configurar en la variable de entorno WAIT_UNTIL_MESSAGE, por defecto 3000ms
     }, this.waitUntilMessageMs);
 
     this.pendingBursts.set(key, pending);
@@ -533,14 +543,37 @@ export class WhatsappService {
     /*     await pending.inboundMessage.sendSticker('processing_ai_thinking'); */
 
     // Pasa directo a manejar texto invocando al ADK
-    await this.handleTextMessage(
-      pending.burst,
-    );
+    await this.handleTextMessage(pending.burst);
   }
 
   private getConversationKey(phoneNumberId: string, sender: string): string {
     return `${phoneNumberId}:${sender}`;
-  } 
+  }
+
+  private isDuplicateMessage(messageId: string | undefined): boolean {
+    if (!messageId) {
+      return false;
+    }
+
+    const now = Date.now();
+    this.pruneProcessedMessageCache(now);
+
+    const seenAt = this.processedMessageCache.get(messageId);
+    if (seenAt && now - seenAt < this.processedMessageTtlMs) {
+      return true;
+    }
+
+    this.processedMessageCache.set(messageId, now);
+    return false;
+  }
+
+  private pruneProcessedMessageCache(now: number): void {
+    for (const [messageId, seenAt] of this.processedMessageCache) {
+      if (now - seenAt >= this.processedMessageTtlMs) {
+        this.processedMessageCache.delete(messageId);
+      }
+    }
+  }
 
   private emitCompanyEvent(
     companyId: string | undefined,
@@ -562,5 +595,4 @@ export class WhatsappService {
 
     this.eventEmitter.emit(SYSTEM_EVENT_CHANNEL, event);
   }
-
 }

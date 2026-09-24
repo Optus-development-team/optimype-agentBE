@@ -13,5 +13,7 @@ export interface VerificationRecord {
 
 export interface VerificationStatus {
   verified: boolean;
+  codeVerified?: boolean;
+  phonePersisted?: boolean;
   linkedAt?: Date | null;
 }

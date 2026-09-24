@@ -131,7 +131,10 @@ export class AuthController {
   ): Promise<{ verified: boolean; linkedAt: string | null }> {
     const auth = this.resolvePhoneVerificationAuth(authorization, cookieHeader);
 
-    const status = await this.verification.getStatus(query.phone);
+    const status = await this.verification.getUserPhoneStatus(
+      auth.userId,
+      query.phone,
+    );
     if (
       auth.authTokenPayload &&
       auth.authTokenPayload.authState === 'PENDING_WHATSAPP' &&

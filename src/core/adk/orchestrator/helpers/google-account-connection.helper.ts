@@ -25,17 +25,20 @@ export async function handleGoogleAccountConnectionRequirement(
     `Admin ${params.userId} needs to connect Google account for company ${params.companyId}`,
   );
 
-  const authUrl = params.oauthService.getAuthUrl(params.companyId);
-  params.logger.debug(`Generated Google auth URL for company ${params.companyId}: ${authUrl}`);
+  const authUrl = params.oauthService.getAuthUrl(
+    params.companyId,
+    params.userId,
+  );
+  params.logger.debug(
+    `Generated Google auth URL for company ${params.companyId}: ${authUrl}`,
+  );
 
   const formatted: FormattedResponse = {
     type: 'cta_url',
-    body:
-      '⚠️ *Configuración necesaria*\n\nPara gestionar tu empresa, es necesario conectar tu cuenta de Google.\n\nPresiona el boton de Conectar Google para continuar.',
+    body: '⚠️ *Configuración necesaria*\n\nPara gestionar tu empresa, es necesario conectar tu cuenta de Google.\n\nPresiona el boton de Conectar Google para continuar.',
     buttonDisplayText: 'Conectar Google',
     buttonUrl: authUrl,
     footerText: 'Cuando termines, vuelve al chat y continúa.',
-    stickerEventType: 'error_or_unauthorized_action',
   };
 
   return {

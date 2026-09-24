@@ -13,10 +13,20 @@ export class AuthTokenService {
   private readonly ttlMs: number;
 
   constructor(private readonly configService: ConfigService) {
-    this.secret =
+    const configuredSecret =
       this.configService.get<string>('AUTH_JWT_SECRET') ||
-      this.configService.get<string>('APP_JWT_SECRET') ||
-      randomBytes(32).toString('hex');
+      this.configService.get<string>('APP_JWT_SECRET');
+
+    if (
+      !configuredSecret &&
+      this.configService.get<string>('NODE_ENV') === 'production'
+    ) {
+      throw new Error(
+        'AUTH_JWT_SECRET o APP_JWT_SECRET debe configurarse en produccion',
+      );
+    }
+
+    this.secret = configuredSecret || randomBytes(32).toString('hex');
 
     this.ttlMs = Number(
       this.configService.get<string>('AUTH_JWT_TTL_MS', '43200000'),

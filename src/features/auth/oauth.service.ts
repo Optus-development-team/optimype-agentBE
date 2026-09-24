@@ -17,9 +17,7 @@ export class OAuthService {
     private readonly supabase: SupabaseService,
     private readonly encryptionService: EncryptionService,
   ) {
-    this.registrationCompanyId =
-      this.configService.get<string>('GOOGLE_REGISTRATION_COMPANY_ID') ??
-      TEST_REGISTRATION_COMPANY_ID;
+    this.registrationCompanyId = this.resolveRegistrationCompanyId();
   }
 
   getLoginAuthUrl(): string {
@@ -36,7 +34,7 @@ export class OAuthService {
     });
   }
 
-  getAuthUrl(companyId: string): string {
+  getAuthUrl(companyId: string, userPhone?: string): string {
     const auth = this.createOAuthClient();
     return auth.generateAuthUrl({
       access_type: 'offline',
@@ -45,7 +43,7 @@ export class OAuthService {
         'https://www.googleapis.com/auth/userinfo.email',
         'https://www.googleapis.com/auth/calendar',
       ],
-      state: `calendar:${companyId}`,
+      state: this.buildCalendarState(companyId, userPhone),
       prompt: 'consent',
     });
   }
@@ -66,8 +64,15 @@ export class OAuthService {
       throw new Error('Google no devolvió un correo válido');
     }
 
-    const user = await this.findCompanyUserByEmail(email);
-    const expectedCompanyId = this.extractCalendarCompanyId(state);
+    const calendarState = this.extractCalendarState(state);
+    const expectedCompanyId = calendarState?.companyId;
+    const stateUserPhone = calendarState?.userPhone;
+    const user = expectedCompanyId
+      ? ((await this.findCompanyUserByEmail(email, expectedCompanyId)) ??
+        (stateUserPhone
+          ? await this.findCompanyUserByPhone(expectedCompanyId, stateUserPhone)
+          : null))
+      : await this.findCompanyUserByEmail(email);
 
     if (
       expectedCompanyId &&
@@ -80,23 +85,30 @@ export class OAuthService {
     }
 
     const session = this.isFullAccessUser(user)
-      ? await this.buildFullSession(user, email)
-      : await this.buildPendingRegistrationSession(email, data.name ?? null);
+      ? await this.buildFullSession(user, email, stateUserPhone)
+      : await this.buildPendingRegistrationSession(
+          email,
+          data.name ?? null,
+          expectedCompanyId,
+          stateUserPhone,
+          user,
+        );
 
     this.logger.log(
       'OAuth callback: expectedCompanyId=',
       expectedCompanyId,
       ', session.companyId=',
-      'Ouath companyIDs',
-      expectedCompanyId,
-      '&&',
-      expectedCompanyId,
-      '!=',
       session.companyId,
     );
 
     if (expectedCompanyId && expectedCompanyId !== session.companyId) {
       throw new Error('La empresa autenticada no coincide con el estado OAuth');
+    }
+
+    if (expectedCompanyId && !this.isAdminRole(session.role)) {
+      throw new Error(
+        'La cuenta autenticada no tiene permisos de administrador',
+      );
     }
 
     await this.upsertUserIntegration({
@@ -137,13 +149,33 @@ export class OAuthService {
   }
 
   async checkCredentials(companyId: string): Promise<boolean> {
-    const rows = await this.supabase.query(
-      `SELECT id FROM company_integrations
-        WHERE company_id = $1 AND provider = 'GOOGLE_CALENDAR' AND is_active = true`,
+    const rows = await this.supabase.query<{
+      encrypted_credentials: { token?: string } | null;
+    }>(
+      `SELECT encrypted_credentials FROM company_integrations
+        WHERE company_id = $1
+          AND provider = 'GOOGLE_CALENDAR'
+          AND is_active = true
+          AND COALESCE(encrypted_credentials->>'token', '') <> ''
+        LIMIT 1`,
       [companyId],
     );
 
-    return rows.length > 0;
+    const encrypted = rows[0]?.encrypted_credentials?.token;
+    if (!encrypted) {
+      return false;
+    }
+
+    try {
+      const decrypted = await this.encryptionService.decrypt(encrypted);
+      JSON.parse(decrypted);
+      return true;
+    } catch (error) {
+      this.logger.warn(
+        `Credenciales de Google Calendar invalidas para ${companyId}: ${(error as Error).message}`,
+      );
+      return false;
+    }
   }
 
   async disconnectCalendar(companyId: string): Promise<void> {
@@ -187,8 +219,7 @@ export class OAuthService {
       throw new Error('Credenciales incompletas');
     }
 
-    const decrypted = await this.encryptionService.decrypt(encrypted);
-    const tokens = JSON.parse(decrypted) as Auth.OAuth2Client['credentials'];
+    const tokens = await this.decryptStoredTokens(companyId, encrypted);
 
     const auth = this.createOAuthClient();
     auth.setCredentials(tokens);
@@ -215,7 +246,7 @@ export class OAuthService {
 
     const existingCredentials = await this.loadStoredTokens(companyId);
     const finalTokens: Auth.OAuth2Client['credentials'] = {
-      ...existingCredentials,
+      ...(existingCredentials ?? {}),
       ...tokens,
       refresh_token: tokens.refresh_token ?? existingCredentials?.refresh_token,
     };
@@ -249,16 +280,37 @@ export class OAuthService {
     tokens: Auth.OAuth2Client['credentials'];
     metadata: Record<string, unknown>;
   }): Promise<void> {
-    const encrypted = await this.encryptionService.encrypt(
-      JSON.stringify(params.tokens),
-    );
-
-    const existing = await this.supabase.query<{ id: string }>(
-      `SELECT id FROM user_integrations
+    const existing = await this.supabase.query<{
+      id: string;
+      encrypted_credentials: { token?: string } | null;
+    }>(
+      `SELECT id, encrypted_credentials FROM user_integrations
         WHERE user_id = $1 AND provider = $2
         ORDER BY updated_at DESC LIMIT 1`,
       [params.userId, params.provider],
     );
+    const previousTokens = await this.loadStoredUserTokens(
+      params.userId,
+      params.provider,
+      existing[0]?.encrypted_credentials,
+    );
+    const finalTokens: Auth.OAuth2Client['credentials'] = {
+      ...(previousTokens ?? {}),
+      ...params.tokens,
+      refresh_token:
+        params.tokens.refresh_token ?? previousTokens?.refresh_token,
+    };
+
+    if (!finalTokens.refresh_token) {
+      this.logger.warn(
+        `Google no devolvio refresh token para user ${params.userId}. Se guardaran credenciales sin refresh_token.`,
+      );
+    }
+
+    const encrypted = await this.encryptionService.encrypt(
+      JSON.stringify(finalTokens),
+    );
+
     if (existing[0]) {
       await this.supabase.query(
         `UPDATE user_integrations
@@ -279,7 +331,10 @@ export class OAuthService {
     }
   }
 
-  private async findCompanyUserByEmail(email: string): Promise<{
+  private async findCompanyUserByEmail(
+    email: string,
+    companyId?: string,
+  ): Promise<{
     userId: string;
     companyId: string | null;
     role: string | null;
@@ -297,6 +352,7 @@ export class OAuthService {
               cu.is_phone_verified
          FROM company_users cu
         WHERE LOWER(cu.email) = LOWER($1)
+          AND ($2::text IS NULL OR cu.company_id::text = $2)
         ORDER BY COALESCE(cu.is_phone_verified, false) DESC,
         CASE
           WHEN UPPER(COALESCE(NULLIF(TRIM(cu.role::text), ''), '')) IN ('OWNER', 'ADMIN', 'ROLE_ADMIN') THEN 0
@@ -304,7 +360,53 @@ export class OAuthService {
         END,
         cu.updated_at DESC NULLS LAST
         LIMIT 1`,
-      [email],
+      [email, companyId ?? null],
+    );
+
+    const row = rows[0];
+    if (!row) {
+      return null;
+    }
+
+    return {
+      userId: row.user_id,
+      companyId: row.company_id,
+      role: row.role,
+      isPhoneVerified: Boolean(row.is_phone_verified),
+    };
+  }
+
+  private async findCompanyUserByPhone(
+    companyId: string,
+    phone: string,
+  ): Promise<{
+    userId: string;
+    companyId: string | null;
+    role: string | null;
+    isPhoneVerified: boolean;
+  } | null> {
+    const normalizedPhone = this.normalizePhone(phone);
+    if (!normalizedPhone) {
+      return null;
+    }
+
+    const rows = await this.supabase.query<{
+      user_id: string;
+      company_id: string | null;
+      role: string | null;
+      is_phone_verified: boolean | null;
+    }>(
+      `SELECT cu.id AS user_id,
+              cu.company_id,
+              cu.role,
+              cu.is_phone_verified
+         FROM company_users cu
+        WHERE cu.company_id = $1
+          AND regexp_replace(cu.phone, '\\D', '', 'g') = $2
+        ORDER BY COALESCE(cu.is_phone_verified, false) DESC,
+                 cu.updated_at DESC NULLS LAST
+        LIMIT 1`,
+      [companyId, normalizedPhone],
     );
 
     const row = rows[0];
@@ -323,6 +425,7 @@ export class OAuthService {
   private async buildFullSession(
     user: { userId: string; companyId: string | null; role: string | null },
     email: string,
+    rawPhone?: string,
   ): Promise<{
     userId: string;
     companyId: string;
@@ -343,9 +446,13 @@ export class OAuthService {
     await this.supabase.query(
       `UPDATE company_users
           SET email = COALESCE(email, $1),
+              phone = CASE
+                WHEN $3 <> '' AND COALESCE(NULLIF(TRIM(phone), ''), '') = '' THEN $3
+                ELSE phone
+              END,
               last_login_at = timezone('utc', now())
         WHERE id = $2`,
-      [email, user.userId],
+      [email, user.userId, this.normalizePhone(rawPhone)],
     );
 
     return {
@@ -360,6 +467,14 @@ export class OAuthService {
   private async buildPendingRegistrationSession(
     email: string,
     alias: string | null,
+    requestedCompanyId?: string,
+    rawPhone?: string,
+    knownUser?: {
+      userId: string;
+      companyId: string | null;
+      role: string | null;
+      isPhoneVerified: boolean;
+    } | null,
   ): Promise<{
     userId: string;
     companyId: string;
@@ -368,23 +483,30 @@ export class OAuthService {
     phoneVerified: boolean;
   }> {
     this.logger.log('Building pending registration session for email', email);
-    const existing = await this.findCompanyUserByEmail(email);
+    const targetCompanyId = requestedCompanyId ?? this.registrationCompanyId;
+    const existing =
+      knownUser ?? (await this.findCompanyUserByEmail(email, targetCompanyId));
+    const normalizedPhone = this.normalizePhone(rawPhone);
 
     if (existing?.userId) {
       const rows = await this.supabase.query<{ id: string }>(
         `UPDATE company_users
             SET company_id = COALESCE(company_id, $1),
                 role = CASE
-                  WHEN TRIM(COALESCE(role::text, '')) = '' THEN 'ADMIN'::user_role
+                  WHEN TRIM(COALESCE(role::text, '')) = '' THEN 'ADMIN'
                   ELSE role
                 END,
                 email = COALESCE(email, $2),
                 alias = COALESCE($3, alias),
+                phone = CASE
+                  WHEN $5 <> '' AND COALESCE(NULLIF(TRIM(phone), ''), '') = '' THEN $5
+                  ELSE phone
+                END,
                 is_phone_verified = COALESCE(is_phone_verified, false),
                 last_login_at = timezone('utc', now())
           WHERE id = $4
           RETURNING id`,
-        [this.registrationCompanyId, email, alias, existing.userId],
+        [targetCompanyId, email, alias, existing.userId, normalizedPhone],
       );
 
       const userId = rows[0]?.id;
@@ -394,7 +516,7 @@ export class OAuthService {
 
       return {
         userId,
-        companyId: existing.companyId ?? this.registrationCompanyId,
+        companyId: existing.companyId ?? targetCompanyId,
         role: this.normalizeRole(existing.role, 'ADMIN'),
         authState: 'PENDING_WHATSAPP',
         phoneVerified: Boolean(existing.isPhoneVerified),
@@ -407,11 +529,11 @@ export class OAuthService {
       role: string | null;
     }>(
       `INSERT INTO company_users (
-         company_id, email, alias, phone, role, is_phone_verified, created_at, last_login_at
+       company_id, email, alias, phone, role, is_phone_verified, created_at, last_login_at
        )
-       VALUES ($1, $2, $3, '', 'ADMIN'::user_role, false, timezone('utc', now()), timezone('utc', now()))
+       VALUES ($1, $2, $3, $4, 'ADMIN', false, timezone('utc', now()), timezone('utc', now()))
        RETURNING id, company_id, role`,
-      [this.registrationCompanyId, email, alias],
+      [targetCompanyId, email, alias, normalizedPhone],
     );
 
     const user = created[0];
@@ -444,6 +566,11 @@ export class OAuthService {
     return Boolean(user?.companyId && user.isPhoneVerified);
   }
 
+  private isAdminRole(role: string | null | undefined): boolean {
+    const normalized = this.normalizeRole(role, '');
+    return normalized === 'ADMIN' || normalized === 'OWNER';
+  }
+
   private normalizeRole(
     role: string | null | undefined,
     fallback: string,
@@ -458,11 +585,34 @@ export class OAuthService {
     return normalized;
   }
 
-  private extractCalendarCompanyId(state?: string): string | undefined {
+  private buildCalendarState(companyId: string, userPhone?: string): string {
+    const normalizedPhone = this.normalizePhone(userPhone);
+    return normalizedPhone
+      ? `calendar:${companyId}:${normalizedPhone}`
+      : `calendar:${companyId}`;
+  }
+
+  private extractCalendarState(
+    state?: string,
+  ): { companyId: string; userPhone?: string } | undefined {
     if (!state?.startsWith('calendar:')) {
       return undefined;
     }
-    return state.slice('calendar:'.length);
+
+    const [companyId, rawPhone] = state.slice('calendar:'.length).split(':');
+    if (!companyId) {
+      return undefined;
+    }
+    const userPhone = this.normalizePhone(rawPhone);
+
+    return {
+      companyId,
+      ...(userPhone ? { userPhone } : {}),
+    };
+  }
+
+  private normalizePhone(phone?: string | null): string {
+    return phone?.replace(/\D/g, '') ?? '';
   }
 
   private extractAudienceFromIdToken(
@@ -521,6 +671,44 @@ export class OAuthService {
     }
   }
 
+  private async loadStoredUserTokens(
+    userId: string,
+    provider: string,
+    credentials: { token?: string } | null | undefined,
+  ): Promise<Auth.OAuth2Client['credentials'] | null> {
+    const encrypted = credentials?.token;
+    if (!encrypted) {
+      return null;
+    }
+
+    try {
+      const decrypted = await this.encryptionService.decrypt(encrypted);
+      return JSON.parse(decrypted) as Auth.OAuth2Client['credentials'];
+    } catch (error) {
+      this.logger.warn(
+        `No se pudieron leer credenciales previas de user ${userId} provider ${provider}: ${(error as Error).message}`,
+      );
+      return null;
+    }
+  }
+
+  private async decryptStoredTokens(
+    companyId: string,
+    encrypted: string,
+  ): Promise<Auth.OAuth2Client['credentials']> {
+    try {
+      const decrypted = await this.encryptionService.decrypt(encrypted);
+      return JSON.parse(decrypted) as Auth.OAuth2Client['credentials'];
+    } catch (error) {
+      this.logger.warn(
+        `Credenciales de Google Calendar invalidas para ${companyId}: ${(error as Error).message}`,
+      );
+      throw new Error(
+        'Credenciales de Google Calendar invalidas o cifradas con otra ENCRYPTION_KEY. Reconecta Google Calendar.',
+      );
+    }
+  }
+
   private createOAuthClient(): Auth.OAuth2Client {
     return new google.auth.OAuth2(
       this.configService.get<string>('GOOGLE_OAUTH_CLIENT_ID'),
@@ -535,10 +723,35 @@ export class OAuthService {
       return explicitUrl.replace(/\/$/, '');
     }
 
-    const baseUrl =
-      this.configService.get<string>('MAIN_PAGE_URL') ||
-      'https://dot-revealable-telescopically.ngrok-free.dev';
+    const baseUrl = this.configService.get<string>('MAIN_PAGE_URL');
+    if (!baseUrl) {
+      if (this.configService.get<string>('NODE_ENV') === 'production') {
+        throw new Error(
+          'GOOGLE_CALLBACK_URL o MAIN_PAGE_URL debe configurarse para OAuth en produccion',
+        );
+      }
+
+      return 'http://localhost:3000/v1/auth/google/callback';
+    }
 
     return `${baseUrl.replace(/\/$/, '')}/v1/auth/google/callback`;
+  }
+
+  private resolveRegistrationCompanyId(): string {
+    const configured = this.configService.get<string>(
+      'GOOGLE_REGISTRATION_COMPANY_ID',
+    );
+
+    if (configured) {
+      return configured;
+    }
+
+    if (this.configService.get<string>('NODE_ENV') === 'production') {
+      throw new Error(
+        'GOOGLE_REGISTRATION_COMPANY_ID debe configurarse para OAuth en produccion',
+      );
+    }
+
+    return TEST_REGISTRATION_COMPANY_ID;
   }
 }

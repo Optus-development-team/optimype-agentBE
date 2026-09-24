@@ -16,6 +16,7 @@ import {
   type SystemNotificationEvent,
 } from '../../../common/events/system-events.types';
 import { LlmResponseFormatterService } from '../formatters/llm-response-formatter.service';
+import { normalizeFormattedResponse } from '../formatters/formatted-response-normalizer';
 
 @Injectable()
 export class AdkOrchestratorService {
@@ -34,7 +35,7 @@ export class AdkOrchestratorService {
 
   async route(context: RouterMessageContext): Promise<OrchestrationResult> {
     const role = context.role ?? UserRole.CLIENT;
-    this.logger.debug("Role", role, "for sender", context.senderId);
+    this.logger.debug('Role', role, 'for sender', context.senderId);
     const vertical = this.normalizeVertical(context.tenant.vertical);
     const orchestrator = this.resolveOrchestrator(role, vertical);
     const companyId = context.tenant?.companyId;
@@ -88,16 +89,13 @@ export class AdkOrchestratorService {
       this.logger.warn('No se pudo formatear respuesta en orchestrator', err);
       return {
         ...result,
-        formattedResponse: {
-          type: 'buttons',
-          body: result.responseText ?? 'No se pudo generar una respuesta estructurada.',
-          options: [
-            {
-              id: 'acknowledge',
-              title: 'Entendido',
-            },
-          ],
-        },
+        formattedResponse: normalizeFormattedResponse(null, {
+          responseText:
+            result.responseText ??
+            'No se pudo generar una respuesta estructurada.',
+          intent: result.intent,
+          agentUsed: result.agentUsed,
+        }),
       };
     }
   }

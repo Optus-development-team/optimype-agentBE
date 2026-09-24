@@ -48,7 +48,7 @@ export class CalendarSyncLogService {
         summary.deleted,
         summary.skipped,
         summary.errors.length,
-        summary.errors,
+        JSON.stringify(summary.errors),
         Date.now() - startedAt,
       ],
     );

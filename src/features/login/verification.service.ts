@@ -78,6 +78,27 @@ export class VerificationService {
     };
   }
 
+  async getUserPhoneStatus(
+    userId: string,
+    phone: string,
+  ): Promise<VerificationStatus> {
+    this.ensureSupabaseReady();
+    const normalizedPhone = this.normalizePhone(phone);
+    const codeStatus = await this.getStatus(normalizedPhone);
+    const phonePersisted = await this.isUserPhoneVerified(
+      userId,
+      normalizedPhone,
+    );
+    const verified = codeStatus.verified && phonePersisted;
+
+    return {
+      verified,
+      codeVerified: codeStatus.verified,
+      phonePersisted,
+      linkedAt: verified ? (codeStatus.linkedAt ?? null) : null,
+    };
+  }
+
   async getLatestRecord(
     phone: string,
   ): Promise<VerificationRecord | undefined> {
@@ -107,13 +128,19 @@ export class VerificationService {
     return false;
   }
 
-  async markPhoneVerified(userId: string, phone: string): Promise<void> {
+  async markPhoneVerified(userId: string, phone: string): Promise<boolean> {
     this.ensureSupabaseReady();
     const normalizedPhone = this.normalizePhone(phone);
-    await this.supabase.query(
-      'update company_users set phone = $1, is_phone_verified = true where id = $2',
+    const rows = await this.supabase.query<{ id: string }>(
+      `UPDATE company_users
+          SET phone = $1,
+              is_phone_verified = true,
+              updated_at = timezone('utc', now())
+        WHERE id = $2
+        RETURNING id`,
       [normalizedPhone, userId],
     );
+    return rows.length > 0;
   }
 
   /**
@@ -128,15 +155,42 @@ export class VerificationService {
     this.ensureSupabaseReady();
     const normalizedPhone = this.normalizePhone(phone);
     const rows = await this.supabase.query<{ id: string }>(
-      `UPDATE company_users
+      `WITH target AS (
+         SELECT id
+           FROM company_users
+          WHERE company_id = $2
+            AND regexp_replace(COALESCE(phone, ''), '\\D', '', 'g') = $1
+          ORDER BY COALESCE(is_phone_verified, false) ASC,
+                   updated_at DESC NULLS LAST,
+                   id
+          LIMIT 1
+       )
+       UPDATE company_users cu
           SET phone = $1,
-              is_phone_verified = true
-        WHERE company_id = $2
-          AND regexp_replace(phone, '\\D', '', 'g') = $1
-        RETURNING id
-        LIMIT 1`,
+              is_phone_verified = true,
+              updated_at = timezone('utc', now())
+         FROM target
+        WHERE cu.id = target.id
+        RETURNING cu.id`,
       [normalizedPhone, companyId],
     );
+    return rows.length > 0;
+  }
+
+  private async isUserPhoneVerified(
+    userId: string,
+    normalizedPhone: string,
+  ): Promise<boolean> {
+    const rows = await this.supabase.query<{ id: string }>(
+      `SELECT id
+         FROM company_users
+        WHERE id = $1
+          AND is_phone_verified = true
+          AND regexp_replace(COALESCE(phone, ''), '\\D', '', 'g') = $2
+        LIMIT 1`,
+      [userId, normalizedPhone],
+    );
+
     return rows.length > 0;
   }
 

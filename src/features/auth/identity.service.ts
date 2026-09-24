@@ -181,7 +181,7 @@ export class IdentityService {
 
     const rows = await this.supabaseService.query<{ id: string }>(
       `INSERT INTO public.company_users (company_id, phone, role)
-       VALUES ($1, $2, $3::user_role)
+       VALUES ($1, $2, $3)
        ON CONFLICT (company_id, phone) DO UPDATE SET role = EXCLUDED.role
        RETURNING id`,
       [companyId, phone, dbRole],

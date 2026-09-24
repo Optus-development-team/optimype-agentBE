@@ -55,24 +55,35 @@ export class OrchestratorToolsService {
 
         // Persistir en DB: marca el teléfono como verificado en company_users
         // (multi-tenant seguro cuando companyId está disponible).
-        if (verified) {
-          if (companyId) {
-            const persisted =
-              await this.verification.markPhoneVerifiedByCompany(
-                companyId,
-                args.senderPhone,
-              );
-            this.logger.log(
-              `[verify_phone_code] Código válido. phone=${args.senderPhone} company=${companyId} persisted=${persisted}`,
-            );
-          } else {
-            this.logger.warn(
-              '[verify_phone_code] Código válido pero sin companyId en contexto; solo se marcó verification_codes.',
-            );
-          }
+        if (!verified) {
+          return { verified: false, persisted: false };
         }
 
-        return { verified };
+        let persisted = false;
+
+        if (companyId) {
+          persisted = await this.verification.markPhoneVerifiedByCompany(
+            companyId,
+            args.senderPhone,
+          );
+          this.logger.log(
+            `[verify_phone_code] Código válido. phone=${args.senderPhone} company=${companyId} persisted=${persisted}`,
+          );
+        } else {
+          this.logger.warn(
+            '[verify_phone_code] Código válido pero sin companyId en contexto; solo se marcó verification_codes.',
+          );
+        }
+
+        return {
+          verified: persisted,
+          persisted,
+          reason: persisted
+            ? undefined
+            : companyId
+              ? 'company_user_not_found'
+              : 'missing_company_context',
+        };
       },
     });
   }

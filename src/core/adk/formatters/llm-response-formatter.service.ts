@@ -16,6 +16,7 @@ import {
   type LlmResponseFormatInput,
 } from './types/llm-response.types';
 import { resolveGeminiModelName } from '../config/gemini-model.config';
+import { normalizeFormattedResponse } from './formatted-response-normalizer';
 
 type AdkErrorEvent = {
   errorCode?: string;
@@ -41,7 +42,8 @@ export class LlmResponseFormatterService {
     this.agent = new LlmAgent({
       name: 'llm_response_formatter',
       model,
-      description: 'Formatea la respuesta final del agente a JSON estructurado.',
+      description:
+        'Formatea la respuesta final del agente a JSON estructurado.',
       instruction:
         'Convierte la respuesta a un JSON valido siguiendo el esquema. ' +
         'Selecciona el tipo correcto y completa los campos requeridos.',
@@ -54,7 +56,6 @@ export class LlmResponseFormatterService {
   async formatResponse(
     input: LlmResponseFormatInput,
   ): Promise<FormattedResponse> {
-    
     // 1. Crear un servicio de sesión y un runner efímeros para ESTA solicitud.
     // Esto asegura que el formateador no acumule historial de otros mensajes de Optus
     // y el recolector de basura (Garbage Collector) limpiará la memoria al terminar.
@@ -99,30 +100,25 @@ export class LlmResponseFormatterService {
         }
       }
     } catch (error) {
-      this.logger.error(`Error en la ejecución del formateador ADK: ${error.message}`, error.stack);
+      this.logger.error(
+        `Error en la ejecución del formateador ADK: ${error.message}`,
+        error.stack,
+      );
     }
 
     if (formatted) {
-      return formatted;
+      return normalizeFormattedResponse(formatted, input);
     }
 
-    this.logger.warn('No se pudo formatear la respuesta, usando fallback estructurado');
-    return {
-      type: 'buttons',
-      body:
-        input.responseText?.trim() ||
-        'Ocurrió un error procesando tu mensaje. Intenta nuevamente en unos momentos.',
-      options: [
-        {
-          id: 'acknowledge',
-          title: 'Entendido',
-        },
-      ],
-    };
+    this.logger.warn(
+      'No se pudo formatear la respuesta, usando fallback estructurado',
+    );
+    return normalizeFormattedResponse(null, input);
   }
 
   private extractFormattedResponse(event: unknown): FormattedResponse | null {
-    const output = (event as { output?: Record<string, unknown> | null }).output;
+    const output = (event as { output?: Record<string, unknown> | null })
+      .output;
 
     if (output && LLM_FORMATTER_OUTPUT_KEY in output) {
       return output[LLM_FORMATTER_OUTPUT_KEY] as FormattedResponse;
