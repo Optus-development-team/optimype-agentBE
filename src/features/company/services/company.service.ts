@@ -68,7 +68,7 @@ export class CompanyService {
     }
 
     await this.supabase.query(
-      `update company_users set company_id = $1, role = coalesce(role, 'OWNER') where id = $2`,
+      `update company_users set company_id = $1, role = 'ADMIN' where id = $2`,
       [company.id, params.creatorUserId],
     );
 

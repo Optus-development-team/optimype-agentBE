@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsIn, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class CreateCompanyDto {
   @ApiProperty({ description: 'Nombre de la empresa' })
@@ -35,10 +35,11 @@ export class AddCompanyUserDto {
   userId!: string;
 
   @ApiProperty({
-    description: 'Rol opcional dentro de la empresa',
+    description: 'Rol opcional dentro de la empresa (enum user_role)',
     required: false,
+    enum: ['ADMIN', 'CLIENT'],
   })
   @IsOptional()
-  @IsString()
-  role?: string;
+  @IsIn(['ADMIN', 'CLIENT'])
+  role?: 'ADMIN' | 'CLIENT';
 }

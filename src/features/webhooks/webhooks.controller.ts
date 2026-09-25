@@ -63,7 +63,7 @@ export class ExternalWebhooksController {
     const qrImageLink = this.extractQrLink(body.data);
     try {
       const updated = await this.supabase.query(
-        `update orders set metadata = metadata || jsonb_build_object('qr_image_link', $1) where id = $2 returning id`,
+        `update orders set metadata = metadata || jsonb_build_object('qr_image_link', $1::text) where id = $2 returning id`,
         [qrImageLink, body.order_id],
       );
 
