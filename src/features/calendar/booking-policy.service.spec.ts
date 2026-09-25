@@ -27,4 +27,33 @@ describe('BookingPolicyService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(db.query).not.toHaveBeenCalled();
   });
+
+  it('lee la política de citas desde el config v3 de la empresa', async () => {
+    db.query.mockResolvedValueOnce([
+      {
+        timezone: 'America/La_Paz',
+        business_hours: {},
+        config: {
+          schema_version: 3,
+          agent_client_appointment_policy: {
+            slot_duration_minutes: 45,
+            buffer_between_appointments_minutes: 10,
+            min_advance_booking_minutes: 60,
+            reminders_minutes: [1440],
+          },
+        },
+      },
+    ]);
+
+    const policy = await service.get('c1');
+
+    expect(policy).toEqual(
+      expect.objectContaining({
+        slotDurationMinutes: 45,
+        bufferMinutes: 10,
+        minAdvanceMinutes: 60,
+        remindersMinutes: [1440],
+      }),
+    );
+  });
 });

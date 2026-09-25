@@ -31,7 +31,7 @@ export class CompanyAgentConfigService {
     input: UpdateAgentProfileDto,
   ): Promise<CompanyAgentConfig> {
     const config = await this.get(companyId);
-    config.profile = {
+    config.agent_profile = {
       agent_name: input.agentName.trim(),
       language: input.language,
       tone: input.tone.trim(),
@@ -52,7 +52,7 @@ export class CompanyAgentConfigService {
     input: UpdateAgentBehaviorDto,
   ): Promise<CompanyAgentConfig> {
     const config = await this.get(companyId);
-    config.behavior = {
+    config.agent_behavior = {
       response_style: input.responseStyle,
       use_emojis: input.useEmojis,
       emoji_intensity: input.emojiIntensity,
@@ -60,6 +60,9 @@ export class CompanyAgentConfigService {
       ask_clarifying_questions: input.askClarifyingQuestions,
       confirm_before_actions: input.confirmBeforeActions,
       never_invent_information: input.neverInventInformation,
+      educational_mode_enabled:
+        input.educationalModeEnabled ??
+        config.agent_behavior.educational_mode_enabled,
       fallback_message: input.fallbackMessage.trim(),
     };
     config.configuration = {
@@ -80,7 +83,7 @@ export class CompanyAgentConfigService {
       throw new BadRequestException('Debes enviar al menos una capacidad');
     }
     const config = await this.get(companyId);
-    config.capabilities = { ...config.capabilities, ...input };
+    config.agent_capabilities = { ...config.agent_capabilities, ...input };
     return this.save(companyId, config);
   }
 

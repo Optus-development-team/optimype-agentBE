@@ -38,7 +38,10 @@ export class BookingPolicyService {
     const row = rows[0];
     if (!row) throw new NotFoundException('Empresa no encontrada');
     const config = this.object(row.config);
-    const appointment = this.object(config.appointment_policy);
+    // companies.config v3; `appointment_policy` es la clave v2 equivalente.
+    const appointment = this.object(
+      config.agent_client_appointment_policy ?? config.appointment_policy,
+    );
     const operational = this.object(config.operational_rules);
     const configuredHours = this.object(row.business_hours);
     const legacyHours = this.object(operational.opening_hours);
@@ -100,8 +103,8 @@ export class BookingPolicyService {
                 THEN business_hours ELSE $3::jsonb END,
               config = jsonb_set(
                 COALESCE(config, '{}'::jsonb),
-                '{appointment_policy}',
-                COALESCE(config->'appointment_policy', '{}'::jsonb) || $4::jsonb,
+                '{agent_client_appointment_policy}',
+                COALESCE(config->'agent_client_appointment_policy', '{}'::jsonb) || $4::jsonb,
                 TRUE
               ),
               updated_at = NOW()

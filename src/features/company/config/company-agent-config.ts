@@ -1,4 +1,14 @@
-export const COMPANY_AGENT_CONFIG_SCHEMA_VERSION = 2;
+/**
+ * Contrato v3 de `companies.config`.
+ *
+ * Refleja la función `normalize_company_agent_config_v3` y el constraint
+ * `chk_companies_agent_config_v3` de la base de datos: el trigger
+ * `normalize_company_agent_config_before_write` aplica la misma
+ * normalización en cada escritura, por lo que ambos lados deben coincidir.
+ * Las claves v2 (`profile`, `behavior`, ...) se aceptan solo como lectura
+ * de compatibilidad.
+ */
+export const COMPANY_AGENT_CONFIG_SCHEMA_VERSION = 3;
 
 export type AgentConfigurationStatus = 'draft' | 'complete';
 export type AgentResponseStyle = 'concise' | 'balanced' | 'detailed';
@@ -28,6 +38,7 @@ export interface CompanyAgentBehavior {
   ask_clarifying_questions: boolean;
   confirm_before_actions: boolean;
   never_invent_information: boolean;
+  educational_mode_enabled: boolean;
   fallback_message: string;
 }
 
@@ -39,60 +50,69 @@ export interface CompanyAgentCapabilities {
   reporting: boolean;
 }
 
+export interface CompanyAgentAdminSecurity {
+  require_2fa_for_admin_actions: boolean;
+  protect_sensitive_data: boolean;
+}
+
+export interface CompanyAgentSalesPolicy {
+  accepted_payment_methods: string[];
+  refund_policy: string;
+}
+
+export interface CompanyAgentClientOperationalRules {
+  human_handoff_enabled: boolean;
+  human_handoff_message: string;
+  walk_ins_allowed: boolean;
+}
+
+export interface CompanyAgentClientAppointmentPolicy {
+  enabled: boolean;
+  service_name: string;
+  cancellation_rule: string;
+  slot_duration_minutes: number;
+  buffer_between_appointments_minutes: number;
+  max_advance_booking_days: number;
+  min_advance_booking_minutes: number;
+  cancellation_notice_minutes: number;
+  reminders_minutes: number[];
+  deposit_required_percentage: number;
+  deposit_amount: number;
+}
+
 export interface CompanyAgentConfig {
   schema_version: number;
   configuration: CompanyAgentConfigurationState;
-  profile: CompanyAgentProfile;
-  behavior: CompanyAgentBehavior;
-  capabilities: CompanyAgentCapabilities;
-  business_info: {
-    industry: string;
-    value_proposition: string;
-    address: string;
-    google_maps_link: string;
-    inventory_context: string;
-  };
-  operational_rules: {
-    contact_phone: string;
-    opening_hours: Record<string, unknown>;
-    human_handoff_enabled: boolean;
-    human_handoff_message: string;
-  };
-  security: {
-    require_2fa_for_admin_actions: boolean;
-    protect_sensitive_data: boolean;
-  };
-  sales_policy: {
-    accepted_payment_methods: string[];
-    delivery_policy: string;
-    refund_policy: string;
-    stock_behavior: string;
-  };
-  appointment_policy: {
-    enabled: boolean;
-    service_name: string;
-    cancellation_rule: string;
-    slot_duration_minutes: number;
-    buffer_between_appointments_minutes: number;
-    max_advance_booking_days: number;
-    min_advance_booking_minutes: number;
-    cancellation_notice_minutes: number;
-    reminders_minutes: number[];
-  };
-  extensions: Record<string, unknown>;
+  agent_profile: CompanyAgentProfile;
+  agent_behavior: CompanyAgentBehavior;
+  agent_capabilities: CompanyAgentCapabilities;
+  agent_admin_security: CompanyAgentAdminSecurity;
+  agent_sales_policy: CompanyAgentSalesPolicy;
+  agent_client_operational_rules: CompanyAgentClientOperationalRules;
+  agent_client_appointment_policy: CompanyAgentClientAppointmentPolicy;
+  agent_extensions: Record<string, unknown>;
 }
 
-const ROOT_KEYS = new Set([
+/** Claves raíz que no se trasladan a `agent_extensions` (v3, v2 y legacy). */
+const KNOWN_ROOT_KEYS = new Set([
   'schema_version',
   'configuration',
+  'agent_profile',
   'profile',
+  'agent_behavior',
   'behavior',
+  'agent_capabilities',
   'capabilities',
   'business_info',
+  'agent_client_operational_rules',
   'operational_rules',
+  'agent_admin_security',
   'security',
+  'agent_sales_policy',
   'sales_policy',
+  'agent_client_appointment_policy',
   'appointment_policy',
+  'agent_extensions',
   'extensions',
   'tone',
   'timezone',
@@ -105,12 +125,11 @@ export function normalizeCompanyAgentConfig(
 ): CompanyAgentConfig {
   const source = object(value);
   const companyName = nonEmpty(context.companyName, 'la empresa');
-  const vertical = nonEmpty(context.vertical, 'general');
   const defaultAgentName = `Asistente de ${companyName}`;
   const defaultPersona = `Asistente de ${companyName}. Responde con información verificada y ayuda al cliente sin inventar datos.`;
 
-  const sourceProfile = object(source.profile);
-  const profile: CompanyAgentProfile = {
+  const sourceProfile = section(source, 'agent_profile', 'profile');
+  const agent_profile: CompanyAgentProfile = {
     agent_name: nonEmpty(sourceProfile.agent_name, defaultAgentName),
     language: language(sourceProfile.language, 'es-BO'),
     tone: nonEmpty(
@@ -123,8 +142,8 @@ export function normalizeCompanyAgentConfig(
     ),
   };
 
-  const sourceBehavior = object(source.behavior);
-  const behavior: CompanyAgentBehavior = {
+  const sourceBehavior = section(source, 'agent_behavior', 'behavior');
+  const agent_behavior: CompanyAgentBehavior = {
     response_style: oneOf(
       sourceBehavior.response_style,
       ['concise', 'balanced', 'detailed'] as const,
@@ -146,14 +165,22 @@ export function normalizeCompanyAgentConfig(
       sourceBehavior.never_invent_information,
       true,
     ),
+    educational_mode_enabled: bool(
+      sourceBehavior.educational_mode_enabled,
+      true,
+    ),
     fallback_message: nonEmpty(
       sourceBehavior.fallback_message,
       'No tengo información suficiente para responder con seguridad. ¿Puedes darme más detalles?',
     ),
   };
 
-  const sourceCapabilities = object(source.capabilities);
-  const capabilities: CompanyAgentCapabilities = {
+  const sourceCapabilities = section(
+    source,
+    'agent_capabilities',
+    'capabilities',
+  );
+  const agent_capabilities: CompanyAgentCapabilities = {
     knowledge: bool(sourceCapabilities.knowledge, true),
     appointments: bool(sourceCapabilities.appointments, true),
     sales: bool(sourceCapabilities.sales, true),
@@ -161,30 +188,22 @@ export function normalizeCompanyAgentConfig(
     reporting: bool(sourceCapabilities.reporting, false),
   };
 
-  const sourceBusiness = object(source.business_info);
-  const business_info: CompanyAgentConfig['business_info'] = {
-    industry: nonEmpty(sourceBusiness.industry, vertical),
-    value_proposition: string(sourceBusiness.value_proposition),
-    address: string(sourceBusiness.address),
-    google_maps_link: string(sourceBusiness.google_maps_link),
-    inventory_context:
-      string(sourceBusiness.inventory_context) ||
-      string(source.inventory_context),
-  };
-
-  const sourceOperational = object(source.operational_rules);
-  const operational_rules: CompanyAgentConfig['operational_rules'] = {
-    contact_phone: string(sourceOperational.contact_phone),
-    opening_hours: object(sourceOperational.opening_hours),
+  const sourceOperational = section(
+    source,
+    'agent_client_operational_rules',
+    'operational_rules',
+  );
+  const agent_client_operational_rules: CompanyAgentClientOperationalRules = {
     human_handoff_enabled: bool(sourceOperational.human_handoff_enabled, true),
     human_handoff_message: nonEmpty(
       sourceOperational.human_handoff_message,
       'Voy a derivar tu consulta con una persona del equipo.',
     ),
+    walk_ins_allowed: bool(sourceOperational.walk_ins_allowed, true),
   };
 
-  const sourceSecurity = object(source.security);
-  const security: CompanyAgentConfig['security'] = {
+  const sourceSecurity = section(source, 'agent_admin_security', 'security');
+  const agent_admin_security: CompanyAgentAdminSecurity = {
     require_2fa_for_admin_actions: bool(
       sourceSecurity.require_2fa_for_admin_actions,
       true,
@@ -192,20 +211,25 @@ export function normalizeCompanyAgentConfig(
     protect_sensitive_data: bool(sourceSecurity.protect_sensitive_data, true),
   };
 
-  const sourceSales = object(source.sales_policy);
-  const sales_policy: CompanyAgentConfig['sales_policy'] = {
-    accepted_payment_methods: strings(sourceSales.accepted_payment_methods),
-    delivery_policy:
-      string(sourceSales.delivery_policy) || string(sourceSales.delivery_cost),
-    refund_policy: string(sourceSales.refund_policy),
-    stock_behavior: string(sourceSales.stock_behavior),
+  const sourceSales = section(source, 'agent_sales_policy', 'sales_policy');
+  const agent_sales_policy: CompanyAgentSalesPolicy = {
+    accepted_payment_methods: isStringArray(
+      sourceSales.accepted_payment_methods,
+    )
+      ? sourceSales.accepted_payment_methods
+      : [],
+    refund_policy: rawString(sourceSales.refund_policy),
   };
 
-  const sourceAppointments = object(source.appointment_policy);
-  const appointment_policy: CompanyAgentConfig['appointment_policy'] = {
+  const sourceAppointments = section(
+    source,
+    'agent_client_appointment_policy',
+    'appointment_policy',
+  );
+  const agent_client_appointment_policy: CompanyAgentClientAppointmentPolicy = {
     enabled: bool(sourceAppointments.enabled, true),
     service_name: nonEmpty(sourceAppointments.service_name, 'Cita'),
-    cancellation_rule: string(sourceAppointments.cancellation_rule),
+    cancellation_rule: rawString(sourceAppointments.cancellation_rule),
     slot_duration_minutes: integer(
       sourceAppointments.slot_duration_minutes,
       30,
@@ -236,24 +260,35 @@ export function normalizeCompanyAgentConfig(
       0,
       43_200,
     ),
-    reminders_minutes: positiveIntegers(
+    reminders_minutes: isPositiveIntegerArray(
       sourceAppointments.reminders_minutes,
-      [1440, 120],
+    )
+      ? sourceAppointments.reminders_minutes
+      : [1440, 120],
+    deposit_required_percentage: numberInRange(
+      sourceAppointments.deposit_required_percentage,
+      0,
+      0,
+      100,
+    ),
+    deposit_amount: numberInRange(
+      sourceAppointments.deposit_amount,
+      0,
+      0,
+      Number.POSITIVE_INFINITY,
     ),
   };
 
   const sourceConfiguration = object(source.configuration);
-  const inferredProfileCompleted =
-    profile.agent_name !== defaultAgentName &&
-    profile.persona_description !== defaultPersona;
   const profileCompleted = bool(
     sourceConfiguration.profile_completed,
-    inferredProfileCompleted,
+    agent_profile.agent_name !== defaultAgentName &&
+      agent_profile.persona_description !== defaultPersona,
   );
   const behaviorCompleted = bool(sourceConfiguration.behavior_completed, false);
   const businessInfoCompleted = bool(
     sourceConfiguration.business_info_completed,
-    Boolean(business_info.value_proposition && business_info.address),
+    true,
   );
   const status: AgentConfigurationStatus =
     sourceConfiguration.status === 'complete' &&
@@ -278,30 +313,47 @@ export function normalizeCompanyAgentConfig(
           ? nullableString(sourceConfiguration.configured_by)
           : null,
     },
-    profile,
-    behavior,
-    capabilities,
-    business_info,
-    operational_rules,
-    security,
-    sales_policy,
-    appointment_policy,
-    extensions: extensions(source),
+    agent_profile,
+    agent_behavior,
+    agent_capabilities,
+    agent_admin_security,
+    agent_sales_policy,
+    agent_client_operational_rules,
+    agent_client_appointment_policy,
+    agent_extensions: extensions(source),
   };
 }
 
+/** Lee una sección v3 y, si no existe, su equivalente v2. */
+function section(
+  source: Record<string, unknown>,
+  key: string,
+  legacyKey: string,
+): Record<string, unknown> {
+  const value = source[key];
+  return isObject(value) ? value : object(source[legacyKey]);
+}
+
 function extensions(source: Record<string, unknown>): Record<string, unknown> {
-  const result = { ...object(source.extensions) };
+  const result = {
+    ...section(source, 'agent_extensions', 'extensions'),
+  };
   for (const [key, value] of Object.entries(source)) {
-    if (!ROOT_KEYS.has(key)) result[key] = value;
+    if (!KNOWN_ROOT_KEYS.has(key)) result[key] = value;
   }
   return result;
 }
 
+function isObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
 function object(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
+  return isObject(value) ? value : {};
+}
+
+function rawString(value: unknown): string {
+  return typeof value === 'string' ? value : '';
 }
 
 function string(value: unknown): string {
@@ -326,24 +378,45 @@ function integer(
   minimum: number,
   maximum: number,
 ): number {
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed >= minimum && parsed <= maximum
-    ? parsed
+  return typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= minimum &&
+    value <= maximum
+    ? value
     : fallback;
 }
 
-function strings(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.map(string).filter((item) => item.length > 0)
-    : [];
+function numberInRange(
+  value: unknown,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+): number {
+  return typeof value === 'number' &&
+    Number.isFinite(value) &&
+    value >= minimum &&
+    value <= maximum
+    ? value
+    : fallback;
 }
 
-function positiveIntegers(value: unknown, fallback: number[]): number[] {
-  if (!Array.isArray(value)) return fallback;
-  const parsed = value
-    .map(Number)
-    .filter((item) => Number.isInteger(item) && item > 0);
-  return parsed.length ? [...new Set(parsed)] : fallback;
+/** Equivalente a `jsonb_is_string_array` (sin elementos vacíos). */
+function isStringArray(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.every((item) => typeof item === 'string' && item.trim() !== '')
+  );
+}
+
+/** Equivalente a `jsonb_is_positive_integer_array` (no vacío). */
+function isPositiveIntegerArray(value: unknown): value is number[] {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every(
+      (item) => typeof item === 'number' && Number.isInteger(item) && item > 0,
+    )
+  );
 }
 
 function language(value: unknown, fallback: string): string {

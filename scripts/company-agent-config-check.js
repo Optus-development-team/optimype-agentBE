@@ -25,7 +25,7 @@ async function main() {
     const health = await pool.query(`
       SELECT
         COUNT(*)::int AS companies,
-        COUNT(*) FILTER (WHERE schema_version = 2)::int AS standardized,
+        COUNT(*) FILTER (WHERE schema_version = 3)::int AS standardized,
         COUNT(*) FILTER (WHERE configuration_status = 'complete')::int AS complete,
         COUNT(*) FILTER (WHERE configuration_status = 'draft')::int AS draft,
         COUNT(*) FILTER (WHERE NOT has_agent_name)::int AS missing_agent_name,
@@ -35,10 +35,10 @@ async function main() {
       FROM (
         SELECT
           (config->>'schema_version')::int AS schema_version,
-          NULLIF(BTRIM(config->'profile'->>'agent_name'), '') IS NOT NULL AS has_agent_name,
-          NULLIF(BTRIM(config->'profile'->>'language'), '') IS NOT NULL AS has_language,
-          NULLIF(BTRIM(config->'profile'->>'tone'), '') IS NOT NULL AS has_tone,
-          NULLIF(BTRIM(config->'profile'->>'persona_description'), '') IS NOT NULL AS has_persona_description,
+          NULLIF(BTRIM(config->'agent_profile'->>'agent_name'), '') IS NOT NULL AS has_agent_name,
+          NULLIF(BTRIM(config->'agent_profile'->>'language'), '') IS NOT NULL AS has_language,
+          NULLIF(BTRIM(config->'agent_profile'->>'tone'), '') IS NOT NULL AS has_tone,
+          NULLIF(BTRIM(config->'agent_profile'->>'persona_description'), '') IS NOT NULL AS has_persona_description,
           config->'configuration'->>'status' AS configuration_status
         FROM companies
       ) AS company_config
@@ -53,7 +53,7 @@ async function main() {
         ) AS normalization_trigger,
         EXISTS (
           SELECT 1 FROM pg_constraint
-          WHERE conname = 'chk_companies_agent_config_v2'
+          WHERE conname = 'chk_companies_agent_config_v3'
             AND convalidated
         ) AS validated_constraint,
         (SELECT COUNT(*)::int FROM company_config_migration_snapshots

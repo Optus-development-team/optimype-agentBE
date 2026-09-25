@@ -33,7 +33,7 @@ describe('CompanyAgentConfigService', () => {
       personaDescription: 'Asistente experto en atención al cliente.',
     });
 
-    expect(result.profile.agent_name).toBe('Nova');
+    expect(result.agent_profile.agent_name).toBe('Nova');
     expect(result.configuration.profile_completed).toBe(true);
     expect(result.configuration.status).toBe('draft');
   });

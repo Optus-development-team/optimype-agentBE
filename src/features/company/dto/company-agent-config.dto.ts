@@ -56,6 +56,10 @@ export class UpdateAgentBehaviorDto {
   @IsBoolean()
   neverInventInformation: boolean;
 
+  @IsBoolean()
+  @IsOptional()
+  educationalModeEnabled?: boolean;
+
   @IsString()
   @MinLength(10)
   @MaxLength(1000)

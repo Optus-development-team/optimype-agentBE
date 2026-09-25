@@ -27,6 +27,7 @@ export interface DbCompanyRow {
   business_hours: DbJson;
   vertical: DbCompanyVertical;
   config: DbJson;
+  config_updated_at: DbTimestamptz | null;
   whatsapp_admin_phone_ids: string[];
   whatsapp_display_phone_number: string | null;
   whatsapp_phone_id: string | null;

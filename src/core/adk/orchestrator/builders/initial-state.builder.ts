@@ -17,9 +17,9 @@ export function buildInitialState(
   const companyId = context.tenant?.companyId;
   const companyName = context.tenant?.companyName ?? '';
   const companyConfig = context.tenant?.companyConfig ?? {};
-  const profile = asObject(companyConfig.profile);
-  const behavior = asObject(companyConfig.behavior);
-  const capabilities = asObject(companyConfig.capabilities);
+  const profile = asObject(companyConfig.agent_profile);
+  const behavior = asObject(companyConfig.agent_behavior);
+  const capabilities = asObject(companyConfig.agent_capabilities);
   const configurationState = asObject(companyConfig.configuration);
   const userPhone = context.senderId;
   const timezone = timeService.getTimezone(context.tenant.timezone);
