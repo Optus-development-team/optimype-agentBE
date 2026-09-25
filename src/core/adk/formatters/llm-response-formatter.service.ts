@@ -46,7 +46,8 @@ export class LlmResponseFormatterService {
         'Formatea la respuesta final del agente a JSON estructurado.',
       instruction:
         'Convierte la respuesta a un JSON valido siguiendo el esquema. ' +
-        'Selecciona el tipo correcto y completa los campos requeridos.',
+        'Selecciona el tipo correcto y completa los campos requeridos. ' +
+        'Si usas una lista de WhatsApp, genera como maximo 10 items en total entre todas sus secciones.',
       inputSchema: LLM_RESPONSE_FORMAT_INPUT_SCHEMA,
       outputSchema: LLM_FORMATTED_RESPONSE_SCHEMA,
       outputKey: LLM_FORMATTER_OUTPUT_KEY,

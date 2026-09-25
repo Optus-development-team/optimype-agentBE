@@ -4,8 +4,6 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
   WhatsAppWebhook,
   WhatsAppIncomingMessage,
-  WhatsAppStatus,
-  WhatsAppContact,
 } from '../dto/whatsapp-webhook.dto';
 import { AdkOrchestratorService } from '../../../../../core/adk/orchestrator/adk-orchestrator.service';
 import { WhatsAppMessagingService } from './whatsapp.messaging.service';
@@ -30,6 +28,7 @@ import {
 } from '../../../../../common/events/system-events.types';
 
 import { WhatsAppMessageBurst } from '../classes/whatsapp-message-burst';
+import { SupabaseService } from '../../../../../common/intraestructure/supabase/supabase.service';
 
 @Injectable()
 export class WhatsappService {
@@ -49,6 +48,7 @@ export class WhatsappService {
     private readonly verification: VerificationService,
     private readonly identity: IdentityService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly db: SupabaseService,
   ) {
     this.sendAgentText =
       this.configService.get<string>('ADK_SEND_AGENT_TEXT', 'false') === 'true';
@@ -152,7 +152,7 @@ export class WhatsappService {
   ): Promise<void> {
     try {
       // Extraer datos
-      const { message, phoneNumberId, contactProfileName } = incomingContext;
+      const { message, phoneNumberId } = incomingContext;
 
       if (!this.isPhoneNumberAllowed(phoneNumberId)) {
         const devTenantPhone = this.configService.get<string>(
@@ -196,6 +196,13 @@ export class WhatsappService {
         this.messagingService,
       );
 
+      if (!(await this.claimInboundMessage(inboundMsg))) {
+        this.logger.warn(
+          `Mensaje duplicado detectado (id=${inboundMsg.id}). Se omite para evitar reprocesamiento.`,
+        );
+        return;
+      }
+
       // EVENT Mensaje recibido
 
       await this.handleMessage(inboundMsg);
@@ -219,13 +226,6 @@ export class WhatsappService {
   private async handleMessage(
     inboundMsg: WhatsAppInboundMessage,
   ): Promise<void> {
-    if (this.isDuplicateMessage(inboundMsg.id)) {
-      this.logger.warn(
-        `Mensaje duplicado detectado (id=${inboundMsg.id}). Se omite para evitar reprocesamiento.`,
-      );
-      return;
-    }
-
     this.logger.log(`Mensaje recibido de: ${inboundMsg.senderId}`);
     this.logger.log(`Tipo de mensaje: ${inboundMsg.type}`);
 
@@ -263,7 +263,7 @@ export class WhatsappService {
         return;
       }
 
-      await this.bufferConversationMessage(inboundMsg);
+      this.bufferConversationMessage(inboundMsg);
       return;
     }
 
@@ -484,9 +484,7 @@ export class WhatsappService {
     );
   }
 
-  private async bufferConversationMessage(
-    inboundMsg: WhatsAppInboundMessage,
-  ): Promise<void> {
+  private bufferConversationMessage(inboundMsg: WhatsAppInboundMessage): void {
     // Id de la conversación (combinación de phoneNumberId y senderId) para agrupar mensajes en un burst (conjunto de mensajes)
     const key = this.getConversationKey(
       inboundMsg.recipientId,
@@ -560,29 +558,46 @@ export class WhatsappService {
     return `${phoneNumberId}:${sender}`;
   }
 
-  private isDuplicateMessage(messageId: string | undefined): boolean {
-    if (!messageId) {
-      return false;
-    }
-
+  private async claimInboundMessage(
+    inboundMsg: WhatsAppInboundMessage,
+  ): Promise<boolean> {
     const now = Date.now();
-    this.pruneProcessedMessageCache(now);
-
-    const seenAt = this.processedMessageCache.get(messageId);
-    if (seenAt && now - seenAt < this.processedMessageTtlMs) {
-      return true;
-    }
-
-    this.processedMessageCache.set(messageId, now);
-    return false;
-  }
-
-  private pruneProcessedMessageCache(now: number): void {
-    for (const [messageId, seenAt] of this.processedMessageCache) {
-      if (now - seenAt >= this.processedMessageTtlMs) {
+    for (const [messageId, claimedAt] of this.processedMessageCache) {
+      if (now - claimedAt > this.processedMessageTtlMs) {
         this.processedMessageCache.delete(messageId);
       }
     }
+    if (this.processedMessageCache.has(inboundMsg.id)) return false;
+
+    if (this.db.isEnabled()) {
+      try {
+        const claimed = await this.db.query<{ message_id: string }>(
+          `WITH expired AS (
+             DELETE FROM whatsapp_inbound_message_receipts
+              WHERE expires_at < NOW()
+           )
+           INSERT INTO whatsapp_inbound_message_receipts (
+             message_id, company_id, phone_number_id, sender_phone
+           ) VALUES ($1, $2, $3, $4)
+           ON CONFLICT (message_id) DO NOTHING
+           RETURNING message_id`,
+          [
+            inboundMsg.id,
+            inboundMsg.tenant.companyId,
+            inboundMsg.recipientId,
+            inboundMsg.senderId,
+          ],
+        );
+        if (!claimed.length) return false;
+      } catch (error) {
+        this.logger.warn(
+          `No se pudo persistir la idempotencia del mensaje; se usará memoria: ${(error as Error).message}`,
+        );
+      }
+    }
+
+    this.processedMessageCache.set(inboundMsg.id, now);
+    return true;
   }
 
   private emitCompanyEvent(

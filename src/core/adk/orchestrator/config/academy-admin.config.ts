@@ -16,6 +16,7 @@ import { OAuthService } from '../../../../features/auth/oauth.service';
 import { TimeService } from '../../../../common/time/time.service';
 import { buildInput } from '../builders/input.builder';
 import { buildInitialState } from '../builders/initial-state.builder';
+import { buildAgentIdentityInstruction } from '../builders/agent-identity-instruction.builder';
 import { handleGoogleAccountConnectionRequirement } from '../helpers/google-account-connection.helper';
 
 @Injectable()
@@ -43,7 +44,9 @@ export class AcademyAdminOrchestratorConfig implements OrchestratorConfig {
   }
 
   buildInstruction(): string {
-    return `Eres el orquestador administrativo de una academia ({app:companyName}).
+    return `${buildAgentIdentityInstruction()}
+
+Eres el orquestador administrativo de una academia ({app:companyName}).
 
 AGENTES DISPONIBLES:
 1. reporting_agent: métricas, reportes y KPI académicos.

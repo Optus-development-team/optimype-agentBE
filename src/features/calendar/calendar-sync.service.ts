@@ -22,7 +22,7 @@ export class CalendarSyncService {
     private readonly calendar: CalendarService,
     private readonly logs: CalendarSyncLogService,
     private readonly db: SupabaseService,
-  ) {}
+  ) { }
 
   async syncAppointmentToGoogle(
     companyId: string,

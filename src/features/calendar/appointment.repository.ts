@@ -35,8 +35,8 @@ export class AppointmentRepository {
           `SELECT id FROM appointments
             WHERE company_id = $1 AND staff_id = $2
               AND status IN ('pending', 'confirmed')
-              AND scheduled_start < ($4::timestamp + make_interval(mins => $5))
-              AND scheduled_end > ($3::timestamp - make_interval(mins => $5))
+              AND scheduled_start < ($4::timestamptz + make_interval(mins => $5))
+              AND scheduled_end > ($3::timestamptz - make_interval(mins => $5))
             LIMIT 1`,
           [
             input.companyId,
@@ -93,6 +93,53 @@ export class AppointmentRepository {
       [appointmentId, companyId],
     );
     return rows[0] ?? null;
+  }
+
+  listBookableServices(companyId: string): Promise<
+    Array<{
+      id: string;
+      name: string;
+      duration_minutes: number | null;
+      description: string | null;
+      sale_price: number | null;
+      currency: string | null;
+    }>
+  > {
+    return this.db.query(
+      `SELECT id, name, duration_minutes, description, sale_price, currency
+         FROM catalog_items
+        WHERE company_id = $1 AND item_type = 'service'
+          AND is_active = TRUE AND is_bookable = TRUE
+        ORDER BY name`,
+      [companyId],
+    );
+  }
+
+  listActiveStaff(
+    companyId: string,
+    serviceId?: string,
+  ): Promise<Array<{ id: string; name: string; specialty: string | null }>> {
+    return this.db.query(
+      `SELECT cs.id,
+              TRIM(cs.first_name || ' ' || COALESCE(cs.last_name, '')) AS name,
+              cs.specialty
+         FROM company_staff cs
+         LEFT JOIN staff_catalog_services scs
+           ON scs.staff_id = cs.id AND scs.catalog_item_id = $2::uuid
+          AND scs.is_active = TRUE
+        WHERE cs.company_id = $1 AND cs.is_active = TRUE
+          AND COALESCE(cs.calendar_sync_enabled, TRUE) = TRUE
+          AND (
+            $2::uuid IS NULL OR scs.id IS NOT NULL OR NOT EXISTS (
+              SELECT 1 FROM staff_catalog_services configured
+               WHERE configured.company_id = $1
+                 AND configured.catalog_item_id = $2
+                 AND configured.is_active = TRUE
+            )
+          )
+        ORDER BY (scs.id IS NOT NULL) DESC, cs.first_name, cs.last_name`,
+      [companyId, serviceId ?? null],
+    );
   }
 
   async listForCustomer(
@@ -159,7 +206,14 @@ export class AppointmentRepository {
                AND a.scheduled_start < $3
                AND a.scheduled_end > $2
           )
-        ORDER BY (cs.google_calendar_id IS NOT NULL) DESC, cs.created_at ASC
+        ORDER BY EXISTS (
+                   SELECT 1
+                     FROM google_calendar_registry registry
+                    WHERE registry.company_id = cs.company_id
+                      AND registry.assigned_to_staff_id = cs.id
+                      AND registry.is_active = TRUE
+                 ) DESC,
+                 cs.created_at ASC
         LIMIT 1`,
       [companyId, start, end],
     );
@@ -188,8 +242,8 @@ export class AppointmentRepository {
           `SELECT id FROM appointments
             WHERE company_id = $1 AND staff_id = $2 AND id <> $3
               AND status IN ('pending', 'confirmed')
-              AND scheduled_start < ($5::timestamp + make_interval(mins => $6))
-              AND scheduled_end > ($4::timestamp - make_interval(mins => $6))
+              AND scheduled_start < ($5::timestamptz + make_interval(mins => $6))
+              AND scheduled_end > ($4::timestamptz - make_interval(mins => $6))
             LIMIT 1`,
           [
             companyId,
@@ -287,11 +341,14 @@ export class AppointmentRepository {
     const rows = await this.db.query<AppointmentRecord>(
       `SELECT a.* FROM appointments a
          JOIN customers c ON c.id = a.customer_id
+         JOIN companies company ON company.id = a.company_id
         WHERE a.company_id = $1
           AND regexp_replace(c.phone, '\\D', '', 'g') = regexp_replace($2, '\\D', '', 'g')
           AND a.status IN ('pending', 'confirmed')
-          AND ($3::date IS NULL OR a.scheduled_start::date = $3::date)
-          AND ($4::time IS NULL OR a.scheduled_start::time BETWEEN
+          AND ($3::date IS NULL OR
+               (a.scheduled_start AT TIME ZONE COALESCE(company.timezone, 'UTC'))::date = $3::date)
+          AND ($4::time IS NULL OR
+               (a.scheduled_start AT TIME ZONE COALESCE(company.timezone, 'UTC'))::time BETWEEN
                 ($4::time - interval '15 minutes') AND ($4::time + interval '15 minutes'))
         ORDER BY a.scheduled_start ASC LIMIT 1`,
       [
@@ -395,44 +452,65 @@ export class AppointmentRepository {
     googleUpdatedAt: string | null;
     existingId?: string;
   }): Promise<AppointmentRecord> {
-    const rows = await this.db.query<AppointmentRecord>(
-      params.existingId
-        ? `UPDATE appointments
-              SET title = $4, description = $5, location = $6,
-                  scheduled_start = $7, scheduled_end = $8,
-                  status = $9::appointment_status, google_calendar_link = $10,
-                  google_updated_at = $11, target_calendar_id = $3,
-                  sync_status = 'synced', sync_error_message = NULL,
-                  last_synced_at = NOW(), updated_at = NOW()
-            WHERE id = $12 AND company_id = $1 RETURNING *`
-        : `INSERT INTO appointments (
-              company_id, staff_id, title, description, location,
-              scheduled_start, scheduled_end, status, appointment_type,
-              context_type, source, google_calendar_event_id,
-              google_calendar_link, google_updated_at, target_calendar_id,
-              sync_status, sync_direction, last_synced_at, metadata
-            ) VALUES (
-              $1, $2, $4, $5, $6, $7, $8, $9::appointment_status,
-              'other'::appointment_type, 'general'::appointment_context_type,
-              'google_calendar', $13, $10, $11, $3, 'synced',
-              'bidirectional', NOW(), '{}'::jsonb
-            ) RETURNING *`,
-      [
-        params.companyId,
-        params.staffId,
-        params.calendarId,
-        params.title,
-        params.description,
-        params.location,
-        params.start,
-        params.end,
-        params.status,
-        params.link,
-        params.googleUpdatedAt,
-        params.existingId ?? null,
-        params.eventId,
-      ],
-    );
+    const rows = params.existingId
+      ? await this.db.query<AppointmentRecord>(
+          `UPDATE appointments
+            SET target_calendar_id = $2,
+                title = $3, description = $4, location = $5,
+                scheduled_start = $6, scheduled_end = $7,
+                status = $8::appointment_status,
+                google_calendar_link = $9,
+                google_updated_at = $10,
+                google_calendar_event_id = COALESCE(
+                  google_calendar_event_id,
+                  $11
+                ),
+                sync_status = 'synced', sync_error_message = NULL,
+                last_synced_at = NOW(), updated_at = NOW()
+          WHERE id = $12 AND company_id = $1 RETURNING *`,
+          [
+            params.companyId,
+            params.calendarId,
+            params.title,
+            params.description,
+            params.location,
+            params.start,
+            params.end,
+            params.status,
+            params.link,
+            params.googleUpdatedAt,
+            params.eventId,
+            params.existingId,
+          ],
+        )
+      : await this.db.query<AppointmentRecord>(
+          `INSERT INTO appointments (
+            company_id, staff_id, title, description, location,
+            scheduled_start, scheduled_end, status, appointment_type,
+            context_type, source, google_calendar_event_id,
+            google_calendar_link, google_updated_at, target_calendar_id,
+            sync_status, sync_direction, last_synced_at, metadata
+          ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8::appointment_status,
+            'other'::appointment_type, 'general'::appointment_context_type,
+            'google_calendar', $9, $10, $11, $12, 'synced',
+            'bidirectional', NOW(), '{}'::jsonb
+          ) RETURNING *`,
+          [
+            params.companyId,
+            params.staffId,
+            params.title,
+            params.description,
+            params.location,
+            params.start,
+            params.end,
+            params.status,
+            params.eventId,
+            params.link,
+            params.googleUpdatedAt,
+            params.calendarId,
+          ],
+        );
     if (!rows[0]) throw new Error('No se pudo importar el evento de Google');
     return rows[0];
   }

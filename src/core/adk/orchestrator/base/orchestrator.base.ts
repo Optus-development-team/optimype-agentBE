@@ -14,6 +14,10 @@ import type { OrchestratorConfig } from '../config/orchestrator.config';
 import type { FormattedResponse } from '../../formatters/types/llm-response.types';
 import { ORCHESTRATOR_INPUT_SCHEMA } from '../types/orchestrator-io.types';
 import { resolveGeminiModelName } from '../../config/gemini-model.config';
+import {
+  buildTenantSessionId,
+  normalizeAgentTreeRoots,
+} from '../helpers/agent-tree.helper';
 
 type AdkErrorEvent = {
   errorCode?: string;
@@ -50,15 +54,16 @@ export abstract class BaseOrchestratorService implements OnModuleInit {
     }
 
     const userId = this.normalizePhone(context.senderId);
-    const tenantAppName = context.tenant.companyName.trim().toLowerCase();
-    const sessionId = `${tenantAppName}:${userId}`;
+    const sessionId = buildTenantSessionId(context.tenant.companyId, userId);
 
-    await this.ensureSession(context, tenantAppName, userId, sessionId);
+    await this.ensureSession(context, userId, sessionId);
 
     try {
       const userMessage = {
         role: 'user' as const,
-        parts: [{ text: JSON.stringify(this.orchestratorConfig.buildInput(context)) }],
+        parts: [
+          { text: JSON.stringify(this.orchestratorConfig.buildInput(context)) },
+        ],
       };
 
       let responseText = '';
@@ -101,7 +106,7 @@ export abstract class BaseOrchestratorService implements OnModuleInit {
         formattedResponse: this.buildFallbackFormattedResponse(responseText),
         sessionState: (
           await this.sessionService.getSession({
-            appName: tenantAppName,
+            appName: this.appName,
             userId,
             sessionId,
           })
@@ -145,6 +150,8 @@ export abstract class BaseOrchestratorService implements OnModuleInit {
       tools: this.orchestratorConfig.getTools(),
     });
 
+    normalizeAgentTreeRoots(this.orchestratorAgent);
+
     this.runner = new Runner({
       agent: this.orchestratorAgent,
       appName: this.appName,
@@ -160,24 +167,27 @@ export abstract class BaseOrchestratorService implements OnModuleInit {
 
   private async ensureSession(
     context: RouterMessageContext,
-    tenantAppName: string,
     userId: string,
     sessionId: string,
   ): Promise<void> {
     const session = await this.sessionService.getSession({
-      appName: tenantAppName,
+      appName: this.appName,
       userId,
       sessionId,
     });
 
+    const freshState = this.orchestratorConfig.buildInitialState(context);
     if (!session) {
       await this.sessionService.createSession({
-        appName: tenantAppName,
+        appName: this.appName,
         userId,
         sessionId,
-        state: this.orchestratorConfig.buildInitialState(context),
+        state: freshState,
       });
+      return;
     }
+
+    await this.sessionService.refreshSessionState(session, freshState);
   }
 
   private normalizePhone(phone: string): string {

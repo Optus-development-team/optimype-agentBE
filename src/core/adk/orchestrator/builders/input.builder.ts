@@ -1,10 +1,11 @@
 import type { RouterMessageContext } from '../../../../features/messaging/features/whatsapp/types/whatsapp.types';
 import type { OrchestratorInput } from '../types/orchestrator-io.types';
+import { describeCalendarSlotSelection } from '../../../../features/calendar/calendar-slot-selection';
 
 export function buildInput(context: RouterMessageContext): OrchestratorInput {
   return {
     message: {
-      text: context.originalText,
+      text: describeCalendarSlotSelection(context.originalText),
       ...(context.referredProduct
         ? {
             referredProduct: {
@@ -23,6 +24,7 @@ export function buildInput(context: RouterMessageContext): OrchestratorInput {
       id: context.tenant.companyId,
       name: context.tenant.companyName,
       vertical: context.tenant.vertical,
+      timezone: context.tenant.timezone,
       config: context.tenant.companyConfig ?? {},
     },
   };

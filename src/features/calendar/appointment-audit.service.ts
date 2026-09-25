@@ -29,9 +29,9 @@ export class AppointmentAuditService {
         actor?.userId ?? null,
         actor?.staffId ?? null,
         actor?.phone ?? null,
-        params.previousState ?? null,
-        params.newState ?? null,
-        params.metadata ?? {},
+        params.previousState ? JSON.stringify(params.previousState) : null,
+        params.newState ? JSON.stringify(params.newState) : null,
+        JSON.stringify(params.metadata ?? {}),
       ],
     );
   }

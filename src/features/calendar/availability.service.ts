@@ -233,7 +233,7 @@ export class AvailabilityService {
     }>(
       `SELECT id, duration_minutes FROM catalog_items
         WHERE id = $1 AND company_id = $2 AND is_active = TRUE
-          AND is_bookable = TRUE LIMIT 1`,
+          AND item_type = 'service' AND is_bookable = TRUE LIMIT 1`,
       [serviceId, companyId],
     );
     if (!rows[0]) throw new BadRequestException('Servicio no disponible');
@@ -265,7 +265,13 @@ export class AvailabilityService {
             )
           )
         ORDER BY (scs.id IS NOT NULL) DESC,
-                 (cs.google_calendar_id IS NOT NULL) DESC,
+                 EXISTS (
+                   SELECT 1
+                     FROM google_calendar_registry registry
+                    WHERE registry.company_id = cs.company_id
+                      AND registry.assigned_to_staff_id = cs.id
+                      AND registry.is_active = TRUE
+                 ) DESC,
                  cs.created_at ASC`,
       [companyId, serviceId ?? null, staffId ?? null],
     );

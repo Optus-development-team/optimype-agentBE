@@ -14,6 +14,8 @@ lerna-debug.log*
 
 # OS
 .DS_Store
+Thumbs.db
+Desktop.ini
 
 # Tests
 /coverage
@@ -37,14 +39,58 @@ lerna-debug.log*
 
 # dotenv environment variable files
 .env
+.env.*
+!.env.example
+!.env.*.example
 .env.development.local
 .env.test.local
 .env.production.local
 .env.local
+.env.privado
+
+# OAuth, cloud and tunnel credentials
+**/client_secret*.json
+**/credentials*.json
+**/service-account*.json
+**/service_account*.json
+ngrok.yml
+.ngrok2/
+*.pem
+*.key
+*.p12
+*.pfx
 
 # temp directory
 .temp
 .tmp
+.cache/
+.history/
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+*.swp
+*.swo
+*~
+*.tsbuildinfo
+.eslintcache
+
+# Local test and browser reports
+test-results/
+playwright-report/
+blob-report/
+
+# Database backups and local exports
+*.dump
+*.backup
+*.sql.gz
+*_backup*.sql
+*_bk_*.sql
+
+# Local helper scripts and notes
+scripts/tmp-*
+/tareas.md
 
 # Runtime data
 pids
@@ -61,16 +107,14 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 .github.rar
 
 # Archivos locales de desarrollo/documentación
-sql/
-!sql/
-sql/*
-!sql/calendar_sync_migration.sql
-!sql/calendar_sync_hardening.sql
-!sql/calendar_operational_completion.sql
-.github/docs/calendar/
-!.github/docs/calendar/
-.github/docs/calendar/*
-!.github/docs/calendar/IMPLEMENTATION_PLAN_CORRECTED.md
-!.github/docs/calendar/SYSTEM_AND_REAL_TESTING_GUIDE.md
-!.github/docs/calendar/BACKEND_OPERATIONAL_COMPLETION.md
-!.github/docs/calendar/CALENDAR_CODE_REVIEW.md
+/sql/
+/.github/docs/calendar/
+/backups/
+
+# Herramientas locales que dependen de SQL o binarios del equipo
+/scripts/calendar-db-seed.js
+/scripts/calendar-registry-canonicalization.js
+/scripts/calendar-timezone-migration-apply.js
+/scripts/calendar-timezone-migration-check.js
+/scripts/supabase-backup.js
+/scripts/whatsapp-conversation-migration.js

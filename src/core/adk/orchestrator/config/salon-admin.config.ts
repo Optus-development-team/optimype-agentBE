@@ -17,6 +17,7 @@ import { TimeService } from '../../../../common/time/time.service';
 import { buildPrompt } from '../builders/prompt.builder';
 import { buildInput } from '../builders/input.builder';
 import { buildInitialState } from '../builders/initial-state.builder';
+import { buildAgentIdentityInstruction } from '../builders/agent-identity-instruction.builder';
 import { handleGoogleAccountConnectionRequirement } from '../helpers/google-account-connection.helper';
 
 @Injectable()
@@ -44,7 +45,9 @@ export class SalonAdminOrchestratorConfig implements OrchestratorConfig {
   }
 
   buildInstruction(): string {
-    return `Eres el orquestador administrativo de un salón de belleza ({app:companyName}).
+    return `${buildAgentIdentityInstruction()}
+
+Eres el orquestador administrativo de un salón de belleza ({app:companyName}).
 
 AGENTES DISPONIBLES:
 1. reporting_agent: métricas de operación y rentabilidad.

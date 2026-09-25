@@ -16,6 +16,7 @@ export interface TenantContext {
   companyId: string;
   companyName: string;
   vertical: CompanyVertical;
+  timezone: string;
   companyConfig: Record<string, unknown>;
   phoneNumberId: string;
   adminPhoneIds: string[];

@@ -22,7 +22,7 @@ export class CalendarSyncJobService {
         companyId,
         calendarId ?? null,
         `webhook:${companyId}:${calendarId ?? 'all'}:${bucket}`,
-        { calendarId },
+        JSON.stringify({ calendarId: calendarId ?? null }),
       ],
     );
   }

@@ -27,6 +27,15 @@ import {
 } from '../interfaces/whatsapp-messaging.interface';
 import type { StickerEventKey } from '../types/sticker-events.types';
 import { getStickerUrlForEvent } from '../helpers/company-sticker.helper';
+import {
+  countInteractiveListRows,
+  limitInteractiveListRows,
+  WHATSAPP_INTERACTIVE_LIST_MAX_ROWS,
+} from '../helpers/interactive-list.helper';
+import {
+  normalizeWhatsAppLabel,
+  normalizeWhatsAppText,
+} from '../helpers/whatsapp-text.helper';
 
 /**
  * Servicio para enviar diferentes tipos de mensajes de WhatsApp.
@@ -56,7 +65,9 @@ export class WhatsAppMessagingService {
       this.logger.error(
         'Intento de enviar mensaje sin phoneNumberId configurado. Petición descartada.',
       );
-      throw new Error('phoneNumberId es requerido para enviar mensajes de WhatsApp.');
+      throw new Error(
+        'phoneNumberId es requerido para enviar mensajes de WhatsApp.',
+      );
     }
     return `https://graph.facebook.com/${this.apiVersion}/${phoneNumberId}/messages`;
   }
@@ -66,7 +77,9 @@ export class WhatsAppMessagingService {
       this.logger.error(
         'Intento de acceder a media sin phoneNumberId configurado. Petición descartada.',
       );
-      throw new Error('phoneNumberId es requerido para interactuar con media de WhatsApp.');
+      throw new Error(
+        'phoneNumberId es requerido para interactuar con media de WhatsApp.',
+      );
     }
     return `https://graph.facebook.com/${this.apiVersion}/${phoneNumberId}/media`;
   }
@@ -95,7 +108,7 @@ export class WhatsAppMessagingService {
       to,
       type: 'text',
       text: {
-        body: text,
+        body: normalizeWhatsAppText(text),
         preview_url: options?.previewUrl ?? false,
       },
     };
@@ -353,9 +366,7 @@ export class WhatsAppMessagingService {
     // La API exige que `display_text` tenga como máximo 20 caracteres.
     // Normalizamos y truncamos para evitar errores 400 de validación.
     const displayTextRaw = String(params.buttonDisplayText ?? '').trim();
-    const displayText = displayTextRaw
-      ? displayTextRaw.slice(0, 20)
-      : 'Abrir';
+    const displayText = displayTextRaw ? displayTextRaw.slice(0, 20) : 'Abrir';
 
     const payload: Record<string, unknown> = {
       messaging_product: 'whatsapp',
@@ -365,8 +376,10 @@ export class WhatsAppMessagingService {
       interactive: {
         type: 'cta_url',
         ...(header ? { header } : {}),
-        body: { text: params.bodyText },
-        ...(params.footerText ? { footer: { text: params.footerText } } : {}),
+        body: { text: normalizeWhatsAppText(params.bodyText) },
+        ...(params.footerText
+          ? { footer: { text: normalizeWhatsAppText(params.footerText) } }
+          : {}),
         action: {
           name: 'cta_url',
           parameters: {
@@ -396,19 +409,27 @@ export class WhatsAppMessagingService {
   ): Promise<WhatsAppMessageResponse> {
     const interactive: Record<string, unknown> = {
       type: 'button',
-      body: { text: bodyText },
-      action: { buttons },
+      body: { text: normalizeWhatsAppText(bodyText) },
+      action: {
+        buttons: buttons.map((button) => ({
+          ...button,
+          reply: {
+            ...button.reply,
+            title: normalizeWhatsAppLabel(button.reply.title),
+          },
+        })),
+      },
     };
 
     if (options?.header) {
       interactive.header =
         typeof options.header === 'string'
-          ? { type: 'text', text: options.header }
+          ? { type: 'text', text: normalizeWhatsAppText(options.header) }
           : options.header;
     }
 
     if (options?.footer) {
-      interactive.footer = { text: options.footer };
+      interactive.footer = { text: normalizeWhatsAppText(options.footer) };
     }
 
     const payload: Record<string, unknown> = {
@@ -437,24 +458,43 @@ export class WhatsAppMessagingService {
     sections: WhatsAppInteractiveListSection[],
     options?: InteractiveOptions,
   ): Promise<WhatsAppMessageResponse> {
+    const totalRows = countInteractiveListRows(sections);
+    const limitedSections = limitInteractiveListRows(sections);
+
+    if (totalRows > WHATSAPP_INTERACTIVE_LIST_MAX_ROWS) {
+      this.logger.warn(
+        `Lista interactiva reducida de ${totalRows} a ${WHATSAPP_INTERACTIVE_LIST_MAX_ROWS} filas para cumplir el limite de Meta.`,
+      );
+    }
+
     const interactive: Record<string, unknown> = {
       type: 'list',
-      body: { text: bodyText },
+      body: { text: normalizeWhatsAppText(bodyText) },
       action: {
-        button: buttonText,
-        sections,
+        button: normalizeWhatsAppLabel(buttonText),
+        sections: limitedSections.map((section) => ({
+          ...section,
+          title: normalizeWhatsAppLabel(section.title),
+          rows: section.rows.map((row) => ({
+            ...row,
+            title: normalizeWhatsAppLabel(row.title),
+            ...(row.description
+              ? { description: normalizeWhatsAppText(row.description) }
+              : {}),
+          })),
+        })),
       },
     };
 
     if (options?.header) {
       interactive.header =
         typeof options.header === 'string'
-          ? { type: 'text', text: options.header }
+          ? { type: 'text', text: normalizeWhatsAppText(options.header) }
           : options.header;
     }
 
     if (options?.footer) {
-      interactive.footer = { text: options.footer };
+      interactive.footer = { text: normalizeWhatsAppText(options.footer) };
     }
 
     const payload: Record<string, unknown> = {

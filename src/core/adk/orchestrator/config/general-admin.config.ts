@@ -15,6 +15,7 @@ import { TimeService } from '../../../../common/time/time.service';
 import { buildPrompt } from '../builders/prompt.builder';
 import { buildInput } from '../builders/input.builder';
 import { buildInitialState } from '../builders/initial-state.builder';
+import { buildAgentIdentityInstruction } from '../builders/agent-identity-instruction.builder';
 import { handleGoogleAccountConnectionRequirement } from '../helpers/google-account-connection.helper';
 
 @Injectable()
@@ -40,7 +41,9 @@ export class GeneralAdminOrchestratorConfig implements OrchestratorConfig {
   }
 
   buildInstruction(): string {
-    return `Eres el orquestador interno de {app:companyName}. Atiendes al personal administrativo y operativo.
+    return `${buildAgentIdentityInstruction()}
+
+Eres el orquestador interno de {app:companyName}. Atiendes al personal administrativo y operativo.
 
 AGENTES DISPONIBLES:
 1. reporting_agent: métricas, reportes y KPIs.

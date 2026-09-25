@@ -8,6 +8,7 @@ import type {
 import type { TenantContext } from '../messaging/features/whatsapp/types/whatsapp.types';
 import type { CompanyVertical } from '../messaging/features/whatsapp/types/whatsapp.types';
 import { UserRole } from '../messaging/features/whatsapp/types/whatsapp.types';
+import { normalizeCompanyAgentConfig } from '../company/config/company-agent-config';
 
 type NullableString = string | null | undefined;
 
@@ -35,7 +36,7 @@ export class IdentityService {
     }
 
     const rows = await this.supabaseService.query<DbCompanyTenantRow>(
-      `SELECT id, name, vertical, config, whatsapp_admin_phone_ids, whatsapp_display_phone_number, whatsapp_phone_id
+      `SELECT id, name, vertical, timezone, config, whatsapp_admin_phone_ids, whatsapp_display_phone_number, whatsapp_phone_id
        FROM public.companies
        WHERE whatsapp_phone_id = $1
        LIMIT 1`,
@@ -76,7 +77,7 @@ export class IdentityService {
     }
 
     const rows = await this.supabaseService.query<DbCompanyTenantRow>(
-      `SELECT id, name, vertical, config, whatsapp_admin_phone_ids, whatsapp_display_phone_number, whatsapp_phone_id
+      `SELECT id, name, vertical, timezone, config, whatsapp_admin_phone_ids, whatsapp_display_phone_number, whatsapp_phone_id
        FROM public.companies
        WHERE id = $1
        LIMIT 1`,
@@ -233,7 +234,10 @@ export class IdentityService {
     row: DbCompanyTenantRow,
     explicitPhoneNumberId?: NullableString,
   ): TenantContext | null {
-    const companyConfig = this.parseConfig(row.config);
+    const companyConfig = normalizeCompanyAgentConfig(
+      this.parseConfig(row.config),
+      { companyName: row.name, vertical: row.vertical },
+    );
     const adminPhoneIds = this.normalizePhoneArray(
       row.whatsapp_admin_phone_ids,
     );
@@ -251,7 +255,8 @@ export class IdentityService {
       companyId: row.id,
       companyName: row.name,
       vertical: this.normalizeVertical(row.vertical),
-      companyConfig,
+      timezone: row.timezone?.trim() || 'America/La_Paz',
+      companyConfig: companyConfig as unknown as Record<string, unknown>,
       phoneNumberId,
       adminPhoneIds,
       displayPhoneNumber: row.whatsapp_display_phone_number ?? null,

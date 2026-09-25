@@ -22,6 +22,7 @@ export interface OrchestratorInput {
     id: string;
     name: string;
     vertical: CompanyVertical;
+    timezone: string;
     config: Record<string, unknown>;
   };
 }
@@ -45,6 +46,7 @@ const OrchestratorInputSchema = z.object({
     id: z.string(),
     name: z.string(),
     vertical: z.string(),
+    timezone: z.string(),
     config: z.any(),
   }),
 });

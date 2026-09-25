@@ -29,6 +29,7 @@ describe('handleGoogleAccountConnectionRequirement', () => {
           phoneNumberId: 'phone-1',
           adminPhoneIds: ['59160000000'],
           displayPhoneNumber: null,
+          timezone: 'America/La_Paz',
         },
         role: UserRole.ADMIN,
       },

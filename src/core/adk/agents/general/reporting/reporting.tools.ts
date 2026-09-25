@@ -29,7 +29,7 @@ export class ReportingToolsService {
       execute: async (args, context?: Context) => {
         const state = context?.state;
         const userRole = state?.get('user:role');
-        const userPhone = state?.get('user:phone') as string | undefined;
+        const timezone = state?.get('app:timezone') as string | undefined;
 
         if (userRole !== 'ADMIN') {
           return {
@@ -43,7 +43,7 @@ export class ReportingToolsService {
 
         return {
           success: true,
-          date: args.date || this.timeService.getTodayDate(userPhone),
+          date: args.date || this.timeService.getTodayDate(timezone),
           metrics: {
             totalSales: 15420.5,
             ordersCount: 23,

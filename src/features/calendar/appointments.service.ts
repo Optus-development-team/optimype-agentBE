@@ -318,8 +318,77 @@ export class AppointmentsService {
     serviceId?: string;
     staffId?: string;
     durationMinutes?: number;
+    excludeAppointmentId?: string;
   }): Promise<AvailabilitySlot[]> {
     return this.availabilityService.list(params);
+  }
+
+  listBookableServices(companyId: string) {
+    return this.appointments.listBookableServices(companyId);
+  }
+
+  listActiveStaff(companyId: string, serviceId?: string) {
+    return this.appointments.listActiveStaff(companyId, serviceId);
+  }
+
+  async resolveActiveStaff(
+    companyId: string,
+    staffName: string,
+    serviceId?: string,
+  ): Promise<{ id: string; name: string; specialty: string | null }> {
+    const requested = this.normalizeSearchText(staffName);
+    const staff = await this.appointments.listActiveStaff(companyId, serviceId);
+    const exact = staff.find(
+      (candidate) => this.normalizeSearchText(candidate.name) === requested,
+    );
+    if (exact) return exact;
+    const partial = staff.filter((candidate) => {
+      const name = this.normalizeSearchText(candidate.name);
+      return name.includes(requested) || requested.includes(name);
+    });
+    if (partial.length === 1) return partial[0];
+    if (partial.length > 1) {
+      throw new BadRequestException(
+        `El profesional es ambiguo. Opciones: ${partial.map((item) => item.name).join(', ')}`,
+      );
+    }
+    throw new NotFoundException(`Profesional no disponible: ${staffName}`);
+  }
+
+  async resolveBookableService(
+    companyId: string,
+    serviceName: string,
+  ): Promise<{ id: string; name: string; durationMinutes: number | null }> {
+    const requested = this.normalizeSearchText(serviceName);
+    const services = await this.appointments.listBookableServices(companyId);
+    const exact = services.find(
+      (service) => this.normalizeSearchText(service.name) === requested,
+    );
+    if (exact) {
+      return {
+        id: exact.id,
+        name: exact.name,
+        durationMinutes: exact.duration_minutes,
+      };
+    }
+
+    const partial = services.filter((service) => {
+      const candidate = this.normalizeSearchText(service.name);
+      return candidate.includes(requested) || requested.includes(candidate);
+    });
+    if (partial.length === 1) {
+      return {
+        id: partial[0].id,
+        name: partial[0].name,
+        durationMinutes: partial[0].duration_minutes,
+      };
+    }
+    if (partial.length > 1) {
+      throw new BadRequestException(
+        `El servicio es ambiguo. Opciones: ${partial.map((item) => item.name).join(', ')}`,
+      );
+    }
+    throw new NotFoundException(`Servicio no disponible: ${serviceName}`);
   }
 
   async findForCustomer(params: {
@@ -398,5 +467,14 @@ export class AppointmentsService {
         )) ?? appointment
       );
     }
+  }
+
+  private normalizeSearchText(value: string): string {
+    return value
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, ' ');
   }
 }
