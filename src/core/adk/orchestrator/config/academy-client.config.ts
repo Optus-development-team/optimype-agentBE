@@ -51,8 +51,6 @@ COMPORTAMIENTO:
 - Toma {app:todayDate} como fecha base para las operaciones.`;
   }
 
-  
-
   buildInput(context: RouterMessageContext): OrchestratorInput {
     return buildInput(context);
   }
