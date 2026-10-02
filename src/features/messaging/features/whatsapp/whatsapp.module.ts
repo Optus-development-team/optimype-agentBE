@@ -7,6 +7,7 @@ import { AuthModule } from '../../../auth/auth.module';
 import { AdkModule } from '../../../../core/adk/adk.module';
 import { WhatsappMessagingModule } from './whatsapp-messaging.module';
 import { InfrastructureModule } from '../../../../common/intraestructure/infrastructure.module';
+import { SupplierPaymentsModule } from '../../../supplier-payments/supplier-payments.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { InfrastructureModule } from '../../../../common/intraestructure/infrast
     AuthModule,
     WhatsappMessagingModule,
     InfrastructureModule,
+    SupplierPaymentsModule,
   ],
   controllers: [WhatsappController],
   providers: [WhatsappService],

@@ -13,8 +13,24 @@ async function bootstrap() {
   app.setGlobalPrefix('v1', {
     exclude: ['docs', 'docs-json', 'docs/*path'],
   });
+  // Orígenes extra (p. ej. el túnel del frontend que sirve /autorizar/:id).
+  const extraOrigins = [
+    process.env.SUPPLIER_AUTH_URL,
+    ...(process.env.CORS_EXTRA_ORIGINS ?? '').split(','),
+  ]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value))
+    .flatMap((value) => {
+      try {
+        return [new URL(value).origin];
+      } catch {
+        Logger.warn(`Origen CORS inválido ignorado: ${value}`);
+        return [];
+      }
+    });
   app.enableCors({
     origin: [
+      ...extraOrigins,
       'http://localhost:3000',
       'http://localhost:3001',
       'https://optus.bamp.lat',

@@ -24,7 +24,8 @@
     "calendar:timezone:google:check": "node scripts/calendar-google-time-reconciliation.js",
     "calendar:e2e": "npm run build && node scripts/calendar-e2e-test.js",
     "calendar:webhooks:setup": "npm run build && node scripts/calendar-webhook-setup.js",
-    "calendar:bidirectional": "npm run build && node scripts/calendar-bidirectional-test.js"
+    "calendar:bidirectional": "npm run build && node scripts/calendar-bidirectional-test.js",
+    "supplier:check": "node scripts/supplier-payment-check.js"
   },
   "dependencies": {
     "@google/adk": "2.0.0",
@@ -46,6 +47,7 @@
     "pg": "^8.18.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "viem": "2.57.2",
     "zod": "^4.3.6"
   },
   "devDependencies": {

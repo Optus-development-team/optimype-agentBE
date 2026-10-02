@@ -29,6 +29,10 @@ import {
 
 import { WhatsAppMessageBurst } from '../classes/whatsapp-message-burst';
 import { SupabaseService } from '../../../../../common/intraestructure/supabase/supabase.service';
+import { SupplierPaymentFlowService } from '../../../../supplier-payments/supplier-payment-flow.service';
+
+/** `templates`: flujo de reglas y plantillas (compras a proveedores). `adk`: orquestador con LLM. */
+type ConversationEngine = 'templates' | 'adk';
 
 @Injectable()
 export class WhatsappService {
@@ -36,6 +40,7 @@ export class WhatsappService {
   private readonly sendAgentText: boolean;
   private readonly waitUntilMessageMs: number;
   private readonly processMessagesSynchronously: boolean;
+  private readonly conversationEngine: ConversationEngine;
   // Cache in-memory para evitar reprocesar mensajes cuando Meta reintenta el webhook.
   private readonly processedMessageCache = new Map<string, number>();
   private readonly processedMessageTtlMs = 10 * 60 * 1000; // 10 minutos
@@ -49,6 +54,7 @@ export class WhatsappService {
     private readonly identity: IdentityService,
     private readonly eventEmitter: EventEmitter2,
     private readonly db: SupabaseService,
+    private readonly supplierPaymentFlow: SupplierPaymentFlowService,
   ) {
     this.sendAgentText =
       this.configService.get<string>('ADK_SEND_AGENT_TEXT', 'false') === 'true';
@@ -60,7 +66,18 @@ export class WhatsappService {
         'WHATSAPP_PROCESS_MESSAGES_SYNC',
         this.configService.get<string>('VERCEL') === '1' ? 'true' : 'false',
       ) === 'true';
-    this.logger.log('🤖 Orquestador ADK activado');
+    this.conversationEngine =
+      this.configService.get<string>(
+        'WHATSAPP_CONVERSATION_ENGINE',
+        'templates',
+      ) === 'adk'
+        ? 'adk'
+        : 'templates';
+    this.logger.log(
+      this.conversationEngine === 'adk'
+        ? '🤖 Orquestador ADK activado'
+        : '🧾 Flujo de plantillas activado (compras a proveedores)',
+    );
   }
 
   /**
@@ -351,7 +368,39 @@ export class WhatsappService {
       return;
     } */
 
+    if (this.conversationEngine === 'templates') {
+      await this.handleWithTemplates(burst);
+      return;
+    }
+
     await this.handleWithAdkOrchestrator(burst);
+  }
+
+  /**
+   * Responde con el flujo de plantillas (sin LLM).
+   */
+  private async handleWithTemplates(
+    burst: WhatsAppMessageBurst,
+  ): Promise<void> {
+    const context = mapBurstToRouterMessageContext(burst);
+    try {
+      await this.supplierPaymentFlow.handle(context);
+      this.logger.log(
+        `✅ [Plantillas] Mensaje procesado para ${context.senderId}`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `❌ Error en flujo de plantillas: ${(error as Error).message}`,
+      );
+      await this.messagingService.sendStickerForEvent(
+        context.senderId,
+        'error_or_unauthorized_action',
+        {
+          phoneNumberId: context.tenant.phoneNumberId,
+          companyId: context.tenant.companyId,
+        },
+      );
+    }
   }
 
   /**

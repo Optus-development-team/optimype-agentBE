@@ -344,6 +344,7 @@ export class WhatsAppMessagingService {
       bodyText: string;
       buttonDisplayText: string;
       buttonUrl: string;
+      headerText?: string;
       headerImageUrl?: string;
       headerImageId?: string;
       footerText?: string;
@@ -351,7 +352,13 @@ export class WhatsAppMessagingService {
     options?: MessageContextOptions,
   ): Promise<WhatsAppMessageResponse> {
     let header: Record<string, unknown> | undefined;
-    if (params.headerImageUrl) {
+    if (params.headerText) {
+      // Meta limita el header de texto a 60 caracteres.
+      header = {
+        type: 'text',
+        text: normalizeWhatsAppLabel(params.headerText).slice(0, 60),
+      };
+    } else if (params.headerImageUrl) {
       header = {
         type: 'image',
         image: { link: params.headerImageUrl },

@@ -6,6 +6,10 @@ jest.mock(
   '../../../../../core/adk/orchestrator/adk-orchestrator.service',
   () => ({ AdkOrchestratorService: class {} }),
 );
+jest.mock(
+  '../../../../supplier-payments/supplier-payment-flow.service',
+  () => ({ SupplierPaymentFlowService: class {} }),
+);
 
 import { WhatsappService } from './whatsapp.webhook.controller.service';
 import { AdkOrchestratorService } from '../../../../../core/adk/orchestrator/adk-orchestrator.service';
@@ -15,6 +19,7 @@ import { IdentityService } from '../../../../auth/identity.service';
 import { SupabaseService } from '../../../../../common/intraestructure/supabase/supabase.service';
 import type { IncomingWhatsAppWebhookContext } from '../mappers/whatsapp-webhook.mapper';
 import { UserRole } from '../types/whatsapp.types';
+import { SupplierPaymentFlowService } from '../../../../supplier-payments/supplier-payment-flow.service';
 
 describe('WhatsappService - Dev Tenant Phone Filter', () => {
   let service: WhatsappService;
@@ -35,41 +40,9 @@ describe('WhatsappService - Dev Tenant Phone Filter', () => {
     resolveRole: jest.Mock;
   };
   let dbMock: { isEnabled: jest.Mock; query: jest.Mock };
+  let supplierFlowMock: { handle: jest.Mock };
 
-  beforeEach(async () => {
-    configMap = {
-      NODE_ENV: 'development',
-      DEV_TENANT_PHONE_NUMBER_ID: '',
-      WHATSAPP_VERIFY_TOKEN: 'test-token',
-      WHATSAPP_PROCESS_MESSAGES_SYNC: 'true',
-    };
-
-    adkOrchestratorMock = {
-      route: jest.fn(),
-    };
-    messagingServiceMock = {
-      markAsRead: jest.fn().mockResolvedValue(undefined),
-      sendInteractiveButtons: jest
-        .fn()
-        .mockResolvedValue({ messages: [{ id: 'wamid.out' }] }),
-      sendInteractiveList: jest
-        .fn()
-        .mockResolvedValue({ messages: [{ id: 'wamid.out' }] }),
-      sendInteractiveCtaUrl: jest
-        .fn()
-        .mockResolvedValue({ messages: [{ id: 'wamid.out' }] }),
-      sendText: jest.fn(),
-      sendStickerForEvent: jest.fn(),
-    };
-    identityServiceMock = {
-      resolveTenantByPhoneId: jest.fn(),
-      resolveRole: jest.fn(),
-    };
-    dbMock = {
-      isEnabled: jest.fn(() => false),
-      query: jest.fn(),
-    };
-
+  async function buildService(): Promise<WhatsappService> {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         WhatsappService,
@@ -113,10 +86,54 @@ describe('WhatsappService - Dev Tenant Phone Filter', () => {
           provide: SupabaseService,
           useValue: dbMock,
         },
+        {
+          provide: SupplierPaymentFlowService,
+          useValue: supplierFlowMock,
+        },
       ],
     }).compile();
 
-    service = module.get<WhatsappService>(WhatsappService);
+    return module.get<WhatsappService>(WhatsappService);
+  }
+
+  beforeEach(async () => {
+    configMap = {
+      NODE_ENV: 'development',
+      DEV_TENANT_PHONE_NUMBER_ID: '',
+      WHATSAPP_VERIFY_TOKEN: 'test-token',
+      WHATSAPP_PROCESS_MESSAGES_SYNC: 'true',
+      WHATSAPP_CONVERSATION_ENGINE: 'adk',
+    };
+
+    adkOrchestratorMock = {
+      route: jest.fn(),
+    };
+    messagingServiceMock = {
+      markAsRead: jest.fn().mockResolvedValue(undefined),
+      sendInteractiveButtons: jest
+        .fn()
+        .mockResolvedValue({ messages: [{ id: 'wamid.out' }] }),
+      sendInteractiveList: jest
+        .fn()
+        .mockResolvedValue({ messages: [{ id: 'wamid.out' }] }),
+      sendInteractiveCtaUrl: jest
+        .fn()
+        .mockResolvedValue({ messages: [{ id: 'wamid.out' }] }),
+      sendText: jest.fn(),
+      sendStickerForEvent: jest.fn(),
+    };
+    identityServiceMock = {
+      resolveTenantByPhoneId: jest.fn(),
+      resolveRole: jest.fn(),
+    };
+    dbMock = {
+      isEnabled: jest.fn(() => false),
+      query: jest.fn(),
+    };
+
+    supplierFlowMock = { handle: jest.fn().mockResolvedValue(undefined) };
+
+    service = await buildService();
   });
 
   describe('idempotencia de mensajes', () => {
@@ -246,6 +263,44 @@ describe('WhatsappService - Dev Tenant Phone Filter', () => {
       expect(adkOrchestratorMock.route).toHaveBeenCalledTimes(1);
       expect(messagingServiceMock.sendInteractiveButtons).toHaveBeenCalledTimes(
         1,
+      );
+    });
+  });
+
+  describe('motor de plantillas', () => {
+    it('envía el texto al flujo de compras sin pasar por el orquestador ADK', async () => {
+      configMap['WHATSAPP_CONVERSATION_ENGINE'] = 'templates';
+      service = await buildService();
+      identityServiceMock.resolveTenantByPhoneId.mockResolvedValue({
+        companyId: 'company-1',
+        companyName: 'Test Company',
+        companyConfig: {},
+        vertical: 'general',
+        phoneNumberId: 'phone-id',
+        adminPhoneIds: ['59170000000'],
+        displayPhoneNumber: null,
+      });
+      identityServiceMock.resolveRole.mockResolvedValue(UserRole.ADMIN);
+
+      await service.processIncomingMessage({
+        phoneNumberId: 'phone-id',
+        contactProfileName: 'Admin',
+        message: {
+          from: '59170000000',
+          id: 'wamid.templates',
+          timestamp: '1600000000',
+          type: 'text',
+          text: { body: 'Quiero comprar 50 bolsas de cemento' },
+        },
+      });
+
+      expect(adkOrchestratorMock.route).not.toHaveBeenCalled();
+      expect(supplierFlowMock.handle).toHaveBeenCalledWith(
+        expect.objectContaining({
+          senderId: '59170000000',
+          originalText: 'Quiero comprar 50 bolsas de cemento',
+          role: UserRole.ADMIN,
+        }),
       );
     });
   });
