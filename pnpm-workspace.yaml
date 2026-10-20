@@ -1,0 +1,8 @@
+allowBuilds:
+  '@google/genai': true
+  '@nestjs/core': true
+  '@scarf/scarf': true
+  esbuild: true
+  protobufjs: true
+  sqlite3: true
+  unrs-resolver: true
